@@ -474,6 +474,41 @@ export class ConversationsService {
   }
 
   /**
+   * KPIs for the "Todas as Conversas" page header.
+   * - total: all non-deleted conversations
+   * - resolved: status CLOSED
+   * - active: status OPEN | WAITING
+   * - humanControlled: any conversation with an assigned human agent
+   */
+  async stats(organizationId: string, access: ChannelAccess = 'ALL') {
+    const accessibleIds = access === 'ALL' ? undefined : [...access];
+    if (accessibleIds !== undefined && accessibleIds.length === 0) {
+      return { total: 0, resolved: 0, active: 0, humanControlled: 0 };
+    }
+    const baseWhere = {
+      organizationId,
+      deletedAt: null,
+      ...(accessibleIds !== undefined
+        ? { channelId: { in: accessibleIds } }
+        : {}),
+    };
+    const [total, resolved, active, humanControlled] =
+      await this.prisma.$transaction([
+        this.prisma.conversation.count({ where: baseWhere }),
+        this.prisma.conversation.count({
+          where: { ...baseWhere, status: 'CLOSED' },
+        }),
+        this.prisma.conversation.count({
+          where: { ...baseWhere, status: { in: ['OPEN', 'WAITING'] } },
+        }),
+        this.prisma.conversation.count({
+          where: { ...baseWhere, assignedToId: { not: null } },
+        }),
+      ]);
+    return { total, resolved, active, humanControlled };
+  }
+
+  /**
    * Marks a conversation as read for the current user. Upserts the
    * ConversationRead row with lastReadAt = now and emits a realtime
    * `conversation:read` event so any open client (other tab, mobile)

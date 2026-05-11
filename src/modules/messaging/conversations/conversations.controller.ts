@@ -142,6 +142,15 @@ export class ConversationsController {
     return this.service.getStatusCounts(orgId, access);
   }
 
+  @Get('stats')
+  @ApiOperation({ summary: 'KPIs for Todas as Conversas (total/resolved/active/humanControlled)' })
+  getStats(
+    @CurrentOrg('id') orgId: string,
+    @CurrentChannelAccess() access: ChannelAccess,
+  ) {
+    return this.service.stats(orgId, access);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get conversation details' })
   findOne(

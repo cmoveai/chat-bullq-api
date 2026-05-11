@@ -13,6 +13,12 @@ import { CurrentOrg, Roles } from '../../../common/decorators';
 export class ContactsController {
   constructor(private readonly service: ContactsService) {}
 
+  @Get('stats')
+  @ApiOperation({ summary: 'Contact KPIs for the contacts page header' })
+  stats(@CurrentOrg('id') orgId: string) {
+    return this.service.stats(orgId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List contacts with search and pagination' })
   @ApiQuery({ name: 'search', required: false })
