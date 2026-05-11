@@ -20,6 +20,7 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1042.0",
     "@nestjs/bullmq": "^11.0.0",
     "@nestjs/common": "^11.1.0",
     "@nestjs/config": "^4.0.0",
@@ -28,9 +29,13 @@
     "@nestjs/passport": "^11.0.0",
     "@nestjs/platform-express": "^11.1.0",
     "@nestjs/platform-socket.io": "^11.1.0",
+    "@nestjs/schedule": "^6.1.3",
     "@nestjs/swagger": "^11.2.0",
+    "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.1.0",
     "@prisma/client": "^6.0.0",
+    "@supabase/supabase-js": "^2.105.3",
+    "@types/ws": "^8.18.1",
     "axios": "^1.13.6",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.0.0",
@@ -45,8 +50,11 @@
     "passport-jwt": "^4.0.1",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.0",
+    "resend": "^4.0.0",
     "rxjs": "^7.8.0",
-    "web-push": "^3.6.0"
+    "web-push": "^3.6.0",
+    "ws": "^8.20.0",
+    "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",

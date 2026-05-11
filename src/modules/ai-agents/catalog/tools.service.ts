@@ -5,10 +5,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { UpsertToolDto } from './dto/upsert-tool.dto';
+import { LimitEnforcerService } from '../../billing/limit-enforcer.service';
 
 @Injectable()
 export class ToolsCatalogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly limitEnforcer: LimitEnforcerService,
+  ) {}
 
   async list(organizationId: string) {
     return this.prisma.aiTool.findMany({
@@ -28,6 +32,7 @@ export class ToolsCatalogService {
   }
 
   async create(organizationId: string, dto: UpsertToolDto) {
+    await this.limitEnforcer.assertWithinLimit(organizationId, 'tool');
     this.assertSourceFields(dto);
     await this.assertNameAvailable(organizationId, dto.name);
 

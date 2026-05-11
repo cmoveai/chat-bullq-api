@@ -9,6 +9,10 @@ import { ListAvailableAgentsTool } from './builtin/list-available-agents.tool';
 import { DelegateToAgentTool } from './builtin/delegate-to-agent.tool';
 import { HandBackToOrchestratorTool } from './builtin/hand-back-to-orchestrator.tool';
 import { GetProductPitchTool } from './builtin/get-product-pitch.tool';
+import { CreateSupportTicketTool } from './builtin/create-support-ticket.tool';
+import { LookupOpenInvoiceTool } from './builtin/lookup-open-invoice.tool';
+import { GetPixPaymentTool } from './builtin/get-pix-payment.tool';
+import { ScheduleWhatsappReminderTool } from './builtin/schedule-whatsapp-reminder.tool';
 
 /**
  * Registry of BUILT-IN skills (named "tools" in the code for legacy reasons).
@@ -31,6 +35,10 @@ export class ToolRegistry {
     delegate: DelegateToAgentTool,
     handBack: HandBackToOrchestratorTool,
     lookupOffering: GetProductPitchTool,
+    createTicket: CreateSupportTicketTool,
+    lookupInvoice: LookupOpenInvoiceTool,
+    getPix: GetPixPaymentTool,
+    scheduleReminder: ScheduleWhatsappReminderTool,
   ) {
     this.register(reply, ['ORCHESTRATOR', 'WORKER']);
     this.register(transfer, ['ORCHESTRATOR', 'WORKER']);
@@ -41,6 +49,16 @@ export class ToolRegistry {
     // Detalhes oficiais (preço/condições/link) das soluções da org —
     // ORCHESTRATOR e WORKER de vendas usam pra não inventar valor/link.
     this.register(lookupOffering, ['ORCHESTRATOR', 'WORKER']);
+    // Registra pedidos que dependem de ação humana externa (NF, boleto,
+    // reembolso). WORKER usa pra registrar ANTES de prometer envio.
+    this.register(createTicket, ['WORKER']);
+    // Financeiro: Silvia consulta cobranças reais e devolve Pix da CMOVE.AI
+    this.register(lookupInvoice, ['WORKER']);
+    this.register(getPix, ['WORKER']);
+    // Agendamento de mensagem WhatsApp futura — usado por Cris.AI e qualquer
+    // worker que prometa lembrete/follow-up. ORCHESTRATOR também pode pra
+    // agendar resposta longa que precisa esperar evento externo.
+    this.register(scheduleReminder, ['ORCHESTRATOR', 'WORKER']);
 
     this.logger.log(
       `Built-in skills loaded: ${[...this.tools.keys()].join(', ')}`,

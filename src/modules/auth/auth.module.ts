@@ -7,6 +7,12 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { ApiKeyStrategy } from './api-key.strategy';
+import { SupabaseJwtStrategy } from './supabase-jwt.strategy';
+import { LoginAttemptsService } from './login-attempts.service';
+import { PasswordPolicyService } from './password-policy.service';
+import { AuthTokensService } from './auth-tokens.service';
+import { LgpdController } from './lgpd.controller';
+import { LgpdService } from './lgpd.service';
 import { ApiKeysModule } from '../api-keys/api-keys.module';
 
 @Module({
@@ -23,8 +29,17 @@ import { ApiKeysModule } from '../api-keys/api-keys.module';
     }),
     ApiKeysModule,
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, ApiKeyStrategy],
-  exports: [AuthService],
+  controllers: [AuthController, LgpdController],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    ApiKeyStrategy,
+    SupabaseJwtStrategy,
+    LoginAttemptsService,
+    PasswordPolicyService,
+    AuthTokensService,
+    LgpdService,
+  ],
+  exports: [AuthService, AuthTokensService],
 })
 export class AuthModule {}

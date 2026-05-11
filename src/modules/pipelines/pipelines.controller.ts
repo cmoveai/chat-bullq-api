@@ -121,4 +121,26 @@ export class PipelinesController {
   ) {
     return this.service.moveCard(cardId, orgId, dto);
   }
+
+  @Post('cards/:cardId/cobrancas')
+  @ApiOperation({
+    summary:
+      'Gera uma cobrança Pix a partir do Card · puxa Contact (nome/email/telefone) e Card.value · permite override no body',
+  })
+  createCobrancaFromCard(
+    @Param('cardId') cardId: string,
+    @CurrentOrg('id') orgId: string,
+    @Body()
+    dto: {
+      vencimento?: string;
+      valor?: number;
+      etapa?: string;
+      pixChave?: string;
+      pixEmv?: string;
+      recorrente?: boolean;
+      recorrenciaDias?: number;
+    },
+  ) {
+    return this.service.createCobrancaFromCard(cardId, orgId, dto);
+  }
 }

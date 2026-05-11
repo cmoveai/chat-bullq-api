@@ -38,6 +38,18 @@ export class OrganizationsController {
     return this.service.updateOrganization(orgId, dto);
   }
 
+  @Post('current/onboarding')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({
+    summary: 'Salva respostas do wizard de onboarding · marca org como onboardada',
+  })
+  completeOnboarding(
+    @CurrentOrg('id') orgId: string,
+    @Body() dto: { experiencia: string; objetivo: string; setores: string[]; tempoMercado: string },
+  ) {
+    return this.service.completeOnboarding(orgId, dto);
+  }
+
   @Get('members')
   @ApiOperation({ summary: 'List members of current organization' })
   getMembers(@CurrentOrg('id') orgId: string) {

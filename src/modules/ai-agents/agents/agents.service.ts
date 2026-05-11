@@ -8,12 +8,17 @@ import { PrismaService } from '../../../database/prisma.service';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 import { AssignAgentChannelDto } from './dto/assign-channel.dto';
+import { LimitEnforcerService } from '../../billing/limit-enforcer.service';
 
 @Injectable()
 export class AgentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly limitEnforcer: LimitEnforcerService,
+  ) {}
 
   async create(organizationId: string, dto: CreateAgentDto) {
+    await this.limitEnforcer.assertWithinLimit(organizationId, 'agent');
     if (dto.parentAgentId) {
       await this.assertParentExists(organizationId, dto.parentAgentId);
     }

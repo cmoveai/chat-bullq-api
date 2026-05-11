@@ -21,6 +21,7 @@ export class LlmService {
   private readonly logger = new Logger(LlmService.name);
   private readonly client: OpenAI;
   private readonly apiKey: string;
+  private readonly isOpenRouter: boolean;
 
   constructor(config: ConfigService) {
     const apiKey = config.get<string>('OPENROUTER_API_KEY');
@@ -30,9 +31,11 @@ export class LlmService {
       );
     }
     this.apiKey = apiKey ?? '';
+    const baseURL = config.get<string>('LLM_BASE_URL') ?? 'https://openrouter.ai/api/v1';
+    this.isOpenRouter = baseURL.includes('openrouter.ai');
     this.client = new OpenAI({
       apiKey: apiKey ?? 'missing',
-      baseURL: 'https://openrouter.ai/api/v1',
+      baseURL,
       defaultHeaders: {
         // OpenRouter uses these for analytics + leaderboard attribution.
         'HTTP-Referer': config.get<string>('APP_URL') ?? 'https://chat-bullq.dev',
@@ -100,8 +103,8 @@ export class LlmService {
         max_tokens: req.maxTokens ?? 2048,
         stream: false,
         ...(req.modelParams ?? {}),
-        // OpenRouter returns cost when this is set.
-        usage: { include: true },
+        // OpenRouter returns cost when this is set. Outros providers (Groq, etc) rejeitam.
+        ...(this.isOpenRouter ? { usage: { include: true } } : {}),
       } as any);
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status;
@@ -301,7 +304,7 @@ export class LlmService {
   private fromOpenAiMessage(msg: any): LlmMessage {
     const toolCalls = msg.tool_calls?.map((tc: any) => ({
       id: tc.id,
-      name: tc.function?.name,
+      name: this.sanitizeToolName(tc.function?.name),
       arguments: this.safeParseJson(tc.function?.arguments),
     }));
 
@@ -310,6 +313,19 @@ export class LlmService {
       content: msg.content ?? '',
       ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
     };
+  }
+
+  /**
+   * Modelos Harmony format (gpt-oss/openai chat completions) às vezes vazam
+   * tokens de canal (`<|channel|>commentary`) no name da tool, causando
+   * "Unknown tool: foo<|channel|>commentary" quando o registry tenta resolver.
+   * Cortamos no primeiro `<|` e mantemos apenas caracteres válidos.
+   */
+  private sanitizeToolName(raw: unknown): string {
+    if (typeof raw !== 'string') return '';
+    const cut = raw.split('<|')[0].trim();
+    // Tool names seguem padrão snakeCase/camelCase · whitelist defensiva.
+    return cut.replace(/[^a-zA-Z0-9_.-]/g, '');
   }
 
   private normalizeStopReason(

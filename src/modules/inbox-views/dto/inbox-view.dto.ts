@@ -21,6 +21,18 @@ export class InboxViewFiltersDto {
   @IsString({ each: true })
   channelIds?: string[];
 
+  /**
+   * Filtra por tipo de canal (resolve dinamicamente em channelIds no momento
+   * da query). Use pra views built-in tipo "Instagram", "API Oficial",
+   * "Pessoal" — assim quando um canal novo é cadastrado, ele entra
+   * automaticamente na view sem precisar reconfigurar.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @IsIn(['INSTAGRAM', 'WHATSAPP_OFFICIAL', 'WHATSAPP_ZAPPFY'], { each: true })
+  channelTypes?: string[];
+
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

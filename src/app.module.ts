@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './database/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -21,6 +23,11 @@ import { ChannelAccessModule } from './modules/iam/channel-access/channel-access
 import { AiAgentsModule } from './modules/ai-agents/ai-agents.module';
 import { InboxViewsModule } from './modules/inbox-views/inbox-views.module';
 import { PipelinesModule } from './modules/pipelines/pipelines.module';
+import { BackupModule } from './modules/backup/backup.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { EmailModule } from './modules/email/email.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 // ProductsModule removido — catálogo agora vive no Trivapp e é consumido
 // via skill HTTP getProductPitch + CatalogSyncService. Tabela `products`
 // fica órfã no DB (cleanup futuro). Não importar aqui.
@@ -29,6 +36,14 @@ import redisConfig from './config/redis.config';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [redisConfig] }),
+    // Cyber Onda 1 · Rate limit global (throttler).
+    // 3 buckets: short (rajadas) · medium · long. Endpoints sensíveis
+    // (login/register/forgot) ganham buckets stricter via @Throttle().
+    ThrottlerModule.forRoot([
+      { name: 'short', ttl: 1000, limit: 10 },     // 10 req/s por IP
+      { name: 'medium', ttl: 10_000, limit: 60 },  // 60 req/10s
+      { name: 'long', ttl: 60_000, limit: 200 },   // 200 req/min
+    ]),
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -59,6 +74,17 @@ import redisConfig from './config/redis.config';
     AiAgentsModule,
     InboxViewsModule,
     PipelinesModule,
+    BackupModule,
+    AuditModule,
+    EmailModule,
+    BillingModule,
+    SuperAdminModule,
+  ],
+  providers: [
+    // Throttler global · aplica em TUDO. Endpoints públicos podem
+    // dar @SkipThrottle() · login/register/forgot devem usar @Throttle()
+    // com limites mais apertados.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CardStatus, PipelineStageType } from '@prisma/client';
+import { CardStatus, PipelineStageType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import {
@@ -371,6 +371,114 @@ export class PipelinesService {
       cardId,
       pipelineId: card.pipelineId,
     });
+  }
+
+  /**
+   * Gera uma Cobrança Pix a partir de um Card · puxa Contact (nome/email/telefone)
+   * e Card.value como valor default. Body permite override de tudo.
+   *
+   * Use-case típico: card vai pra stage WON · CRM sugere "Gerar cobrança" · admin
+   * confirma vencimento e dispara. Cobrança nasce já linkada ao Card via cobrancas.card_id.
+   */
+  async createCobrancaFromCard(
+    cardId: string,
+    organizationId: string,
+    overrides: {
+      vencimento?: string;
+      valor?: number;
+      etapa?: string;
+      pixChave?: string;
+      pixEmv?: string;
+      recorrente?: boolean;
+      recorrenciaDias?: number;
+    } = {},
+  ) {
+    const card = await this.prisma.card.findUnique({
+      where: { id: cardId },
+      include: { contact: true, organization: true },
+    });
+    if (!card || card.organizationId !== organizationId) {
+      throw new NotFoundException('Card não encontrado');
+    }
+    if (!card.contact && !overrides.etapa) {
+      throw new BadRequestException(
+        'Card sem contato vinculado · forneça etapa+pixChave no body ou vincule um Contact',
+      );
+    }
+
+    const valor =
+      overrides.valor !== undefined
+        ? overrides.valor
+        : card.value
+          ? Number(card.value)
+          : null;
+    if (valor === null || valor <= 0) {
+      throw new BadRequestException('Valor obrigatório · forneça no body ou em Card.value');
+    }
+
+    const vencimento = overrides.vencimento
+      ? new Date(overrides.vencimento + 'T00:00:00')
+      : (() => {
+          const d = new Date();
+          d.setDate(d.getDate() + 7);
+          d.setHours(0, 0, 0, 0);
+          return d;
+        })();
+
+    const pixChave = overrides.pixChave ?? '66432401000129';
+    const etapa = overrides.etapa ?? card.title;
+    const clienteNome = card.contact?.name ?? card.title;
+    const clienteEmail = card.contact?.email ?? null;
+    const clienteTelefone = card.contact?.phone ?? null;
+
+    const slug = this.generateCobrancaSlug(clienteNome, etapa);
+    const exists = await this.prisma.cobranca.findUnique({ where: { slug } });
+    if (exists) {
+      throw new BadRequestException(
+        `Já existe cobrança com slug "${slug}" · ajuste etapa ou valor`,
+      );
+    }
+
+    const cobranca = await this.prisma.cobranca.create({
+      data: {
+        slug,
+        organizationId,
+        clienteNome,
+        clienteEmail,
+        clienteTelefone,
+        etapa,
+        valor: new Prisma.Decimal(valor),
+        vencimento,
+        pixChave,
+        pixEmv: overrides.pixEmv ?? null,
+        recorrente: overrides.recorrente ?? false,
+        recorrenciaDias: overrides.recorrente
+          ? (overrides.recorrenciaDias ?? 30)
+          : null,
+        cardId: card.id,
+      },
+    });
+
+    this.realtime.emitToOrg(organizationId, 'card:cobranca_created', {
+      cardId: card.id,
+      cobrancaId: cobranca.id,
+      cobrancaSlug: cobranca.slug,
+    });
+
+    return cobranca;
+  }
+
+  private generateCobrancaSlug(clienteNome: string, etapa: string): string {
+    const base = `${clienteNome}-${etapa}`
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    const month = new Date()
+      .toLocaleString('pt-BR', { month: '2-digit', year: 'numeric' })
+      .replace('/', '-');
+    return `${base}-${month}`.slice(0, 80);
   }
 
   /**

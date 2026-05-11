@@ -32,6 +32,30 @@ export class InboxViewsService {
     filters: Record<string, any>;
   }> = [
     {
+      name: 'Instagram',
+      icon: 'Instagram',
+      color: '#ec4899',
+      filters: { channelTypes: ['INSTAGRAM'] },
+    },
+    {
+      name: 'API Oficial',
+      icon: 'BadgeCheck',
+      color: '#22c55e',
+      filters: { channelTypes: ['WHATSAPP_OFFICIAL'], kind: 'INDIVIDUAL' },
+    },
+    {
+      name: 'Grupos',
+      icon: 'Users',
+      color: '#a855f7',
+      filters: { kind: 'GROUP' },
+    },
+    {
+      name: 'Pessoal',
+      icon: 'MessageCircle',
+      color: '#3b82f6',
+      filters: { channelTypes: ['WHATSAPP_ZAPPFY'], kind: 'INDIVIDUAL' },
+    },
+    {
       name: 'Archived',
       icon: 'Archive',
       color: '#6b7280',
@@ -202,11 +226,36 @@ export class InboxViewsService {
       ? filters.statuses.join(',')
       : undefined;
 
+    // Resolve channelTypes → channelIds. Se a view tem ambos, faz interseção:
+    // só canais que estão em channelIds E são do tipo certo. Se só tem
+    // channelTypes, busca todos os canais ativos da org daquele tipo.
+    let resolvedChannelIds = filters.channelIds;
+    if (filters.channelTypes?.length) {
+      const channelsOfType = await this.prisma.channel.findMany({
+        where: {
+          organizationId,
+          deletedAt: null,
+          isActive: true,
+          type: { in: filters.channelTypes as any[] },
+        },
+        select: { id: true },
+      });
+      const idsOfType = channelsOfType.map((c) => c.id);
+      resolvedChannelIds = filters.channelIds?.length
+        ? filters.channelIds.filter((id) => idsOfType.includes(id))
+        : idsOfType;
+      // View built-in com channelTypes filtrando, mas sem canal cadastrado
+      // do tipo: devolve [] sentinela pra forçar 0 resultados (em vez de
+      // omitir o filtro e mostrar conversa de outros tipos).
+      if (resolvedChannelIds.length === 0)
+        resolvedChannelIds = ['__none__'];
+    }
+
     return this.conversationsService.findInbox(
       organizationId,
       {
         status,
-        channelIds: filters.channelIds,
+        channelIds: resolvedChannelIds,
         conversationIds: filters.conversationIds,
         kind: filters.kind,
         tagIds: filters.tagIds,

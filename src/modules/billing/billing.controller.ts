@@ -1,0 +1,57 @@
+import { Controller, Get, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard, OrgGuard } from '../../common/guards';
+import { CurrentOrg } from '../../common/decorators';
+import { PlansService } from './plans.service';
+import { SubscriptionsService } from './subscriptions.service';
+import { UsageService } from './usage.service';
+
+@ApiTags('Billing')
+@Controller('billing')
+export class BillingController {
+  constructor(
+    private readonly plans: PlansService,
+    private readonly subscriptions: SubscriptionsService,
+    private readonly usage: UsageService,
+  ) {}
+
+  @Get('plans')
+  @ApiOperation({ summary: 'Public catalog of plans' })
+  async listPlans() {
+    return { data: await this.plans.listActive() };
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard, OrgGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Current organization subscription + plan' })
+  async getCurrent(@CurrentOrg('id') orgId: string) {
+    const sub = await this.subscriptions.findOrCreateForOrg(orgId);
+    return { data: sub };
+  }
+
+  @Get('usage')
+  @UseGuards(JwtAuthGuard, OrgGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Usage vs plan limits for current month' })
+  async getUsage(@CurrentOrg('id') orgId: string) {
+    const sub = await this.subscriptions.findOrCreateForOrg(orgId);
+    const usage = await this.usage.monthlySnapshot(orgId);
+
+    return {
+      data: {
+        plan: sub.plan,
+        status: sub.status,
+        trialEndsAt: sub.trialEndsAt,
+        usage,
+        limits: {
+          maxChannels: sub.plan.maxChannels,
+          maxConversationsMonth: sub.plan.maxConversationsMonth,
+          maxAgents: sub.plan.maxAgents,
+          maxTools: sub.plan.maxTools,
+          maxMembers: sub.plan.maxMembers,
+        },
+      },
+    };
+  }
+}

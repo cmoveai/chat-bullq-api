@@ -3,6 +3,8 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -12,6 +14,12 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { LoginAttemptsService } from './login-attempts.service';
+import { PasswordPolicyService } from './password-policy.service';
+import { AuthTokensService } from './auth-tokens.service';
+import { EmailService } from '../email/email.service';
+import { SubscriptionsService } from '../billing/subscriptions.service';
+import { AuthTokenType } from '@prisma/client';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -23,6 +31,11 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly loginAttempts: LoginAttemptsService,
+    private readonly passwordPolicy: PasswordPolicyService,
+    private readonly email: EmailService,
+    private readonly subscriptions: SubscriptionsService,
+    private readonly authTokens: AuthTokensService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -33,6 +46,12 @@ export class AuthService {
     if (existing) {
       throw new ConflictException('Email already registered');
     }
+
+    // Cyber Onda 1 · S1.7 · Senha forte obrigatória
+    await this.passwordPolicy.assertStrong(dto.password, [
+      dto.email,
+      dto.name,
+    ]);
 
     const hashedPassword = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
@@ -103,6 +122,20 @@ export class AuthService {
 
     const tokens = await this.generateTokens(result.user.id, result.user.email);
     this.logger.log(`User registered (new workspace): ${result.user.email}`);
+
+    // Trial 7 dias automático · plan SOLO default · sem cartão na frente
+    await this.subscriptions
+      .createTrialForOrg(result.organization.id)
+      .catch((err) => this.logger.warn(`Trial subscription failed: ${err.message}`));
+
+    // Cyber Onda 1 · S1.5 · email verification obrigatório
+    // Gera token + dispara verify · welcome só sai depois do clique no link
+    try {
+      const verifyToken = await this.authTokens.create(result.user.id, AuthTokenType.VERIFY_EMAIL);
+      await this.email.sendVerifyEmail(result.user.email, result.user.name, verifyToken);
+    } catch (err: any) {
+      this.logger.warn(`Verify email failed: ${err.message}`);
+    }
 
     return {
       user: this.sanitizeUser(result.user),
@@ -212,22 +245,52 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    // Cyber Onda 1 · S1.6 · brute-force lockout
+    const lockMs = await this.loginAttempts.getLockMsRemaining(dto.email);
+    if (lockMs > 0) {
+      const min = Math.ceil(lockMs / 60_000);
+      throw new HttpException(
+        `Conta temporariamente bloqueada por excesso de tentativas. Tente novamente em ~${min}min.`,
+        HttpStatus.LOCKED,
+      );
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
     if (!user) {
+      // Conta as falhas mesmo se email não existir · evita user enumeration via timing
+      await this.loginAttempts.recordFail(dto.email);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const passwordValid = await bcrypt.compare(dto.password, user.password);
     if (!passwordValid) {
+      const result = await this.loginAttempts.recordFail(dto.email);
+      if (result.locked) {
+        const min = Math.ceil(result.lockMsRemaining / 60_000);
+        throw new HttpException(
+          `Conta bloqueada por ${min}min após ${result.fails} tentativas. Aguarde ou use "esqueci minha senha".`,
+          HttpStatus.LOCKED,
+        );
+      }
       throw new UnauthorizedException('Invalid credentials');
     }
 
     if (!user.isActive) {
       throw new UnauthorizedException('Account is deactivated');
     }
+
+    if (!user.emailVerifiedAt) {
+      throw new HttpException(
+        'Confirme seu e-mail antes de fazer login. Verifique sua caixa de entrada ou peça reenvio.',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    // Login OK · zera contador de falhas
+    await this.loginAttempts.recordSuccess(dto.email);
 
     const memberships = await this.prisma.userOrganization.findMany({
       where: { userId: user.id },
@@ -256,6 +319,63 @@ export class AuthService {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
     };
+  }
+
+  /** Cyber Onda 1 · S1.5 · valida token de verificação e marca emailVerifiedAt + welcome */
+  async verifyEmail(token: string): Promise<string> {
+    const userId = await this.authTokens.consume(token, AuthTokenType.VERIFY_EMAIL);
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { emailVerifiedAt: new Date() },
+    });
+    // Welcome email com checklist · só agora que confirmou o email
+    this.email
+      .sendWelcomeEmail(user.email, user.name)
+      .catch((err) => this.logger.warn(`Welcome email failed: ${err.message}`));
+    return userId;
+  }
+
+  /** Reenvio de verificação · idempotente · não revela existência de conta */
+  async resendVerification(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || user.emailVerifiedAt) return; // silencioso · não vaza enumeração
+    try {
+      const token = await this.authTokens.create(user.id, AuthTokenType.VERIFY_EMAIL);
+      await this.email.sendVerifyEmail(user.email, user.name, token);
+    } catch (err: any) {
+      this.logger.warn(`Resend verification failed: ${err.message}`);
+    }
+  }
+
+  /** Cyber Onda 1 · S1.6 · gera token reset · envia email · não vaza existência da conta */
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) return; // silencioso
+    try {
+      const token = await this.authTokens.create(user.id, AuthTokenType.RESET_PASSWORD);
+      await this.email.sendResetPasswordEmail(user.email, user.name, token);
+    } catch (err: any) {
+      this.logger.warn(`Forgot password failed: ${err.message}`);
+    }
+  }
+
+  /** Valida token reset + senha policy + grava nova senha · invalida sessões via lockout reset */
+  async resetPassword(token: string, newPassword: string): Promise<string> {
+    const userId = await this.authTokens.consume(token, AuthTokenType.RESET_PASSWORD);
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    await this.passwordPolicy.assertStrong(newPassword, [user.email, user.name]);
+    const hashed = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashed },
+    });
+    await this.loginAttempts.recordSuccess(user.email); // zera lockout pra deixar logar
+
+    this.logger.log(`Password reset for user ${userId}`);
+    return userId;
   }
 
   async refresh(refreshToken: string) {

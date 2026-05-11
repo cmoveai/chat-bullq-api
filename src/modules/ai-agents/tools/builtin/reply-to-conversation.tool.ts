@@ -52,14 +52,22 @@ export class ReplyToConversationTool implements AiTool {
       return { output: { ok: false, error: 'text is empty' } };
     }
 
-    const [agent, contactChannel] = await Promise.all([
-      this.prisma.aiAgent.findUnique({
-        where: { id: ctx.agentId },
-        select: { name: true },
-      }),
+    const agent = await this.prisma.aiAgent.findUnique({
+      where: { id: ctx.agentId },
+      select: { name: true, category: true, alwaysPrefixIdentity: true },
+    });
+    const [contactChannel, prevMsgFromAgent] = await Promise.all([
       this.prisma.contactChannel.findFirst({
         where: { contactId: ctx.contactId, channelId: ctx.channelId },
         select: { externalId: true },
+      }),
+      this.prisma.message.findFirst({
+        where: {
+          conversationId: ctx.conversationId,
+          direction: MessageDirection.OUTBOUND,
+          senderName: agent?.name ?? null,
+        },
+        select: { id: true },
       }),
     ]);
 
@@ -75,12 +83,24 @@ export class ReplyToConversationTool implements AiTool {
       };
     }
 
+    // Prefixa nome+departamento na 1ª msg do agente OU em toda msg quando alwaysPrefixIdentity=true.
+    // Evita duplicar se o modelo já emitiu o prefixo no próprio texto.
+    let finalText = text;
+    if (agent?.name) {
+      const dept = agent.category ? ` · ${agent.category}` : '';
+      const prefix = `*${agent.name}${dept}*`;
+      const shouldPrefix = agent.alwaysPrefixIdentity || !prevMsgFromAgent;
+      if (shouldPrefix && !text.startsWith(prefix)) {
+        finalText = `${prefix}\n\n${text}`;
+      }
+    }
+
     const message = await this.prisma.message.create({
       data: {
         conversationId: ctx.conversationId,
         direction: MessageDirection.OUTBOUND,
         type: MessageContentType.TEXT,
-        content: { text },
+        content: { text: finalText },
         status: MessageStatus.QUEUED,
         senderName: agent?.name ?? 'AI',
         metadata: { aiAgentId: ctx.agentId, runId: ctx.runId },
@@ -109,7 +129,7 @@ export class ReplyToConversationTool implements AiTool {
         contactExternalId: contactChannel.externalId,
         message: {
           type: MessageContentType.TEXT,
-          content: { text },
+          content: { text: finalText },
         },
       },
       {

@@ -35,6 +35,29 @@ export class OrganizationsService {
     });
   }
 
+  /**
+   * Salva respostas do wizard de onboarding (experiência IA · objetivo · setores · tempo)
+   * e marca org como onboardada. Idempotente · re-submeter sobrescreve respostas.
+   */
+  async completeOnboarding(
+    orgId: string,
+    dto: { experiencia: string; objetivo: string; setores: string[]; tempoMercado: string },
+  ) {
+    await this.getOrganization(orgId);
+    const updated = await this.repository.update(orgId, {
+      onboardingData: {
+        experiencia: dto.experiencia,
+        objetivo: dto.objetivo,
+        setores: dto.setores,
+        tempoMercado: dto.tempoMercado,
+        completedAt: new Date().toISOString(),
+      },
+      onboardingCompletedAt: new Date(),
+    });
+    this.logger.log(`Onboarding completed for org ${orgId}`);
+    return updated;
+  }
+
   async getMembers(orgId: string) {
     return this.repository.findMembers(orgId);
   }

@@ -19,6 +19,7 @@ import {
   ChannelAccessService,
   type ChannelAccess,
 } from '../../iam/channel-access/channel-access.service';
+import { LimitEnforcerService } from '../../billing/limit-enforcer.service';
 
 @Injectable()
 export class ChannelsService {
@@ -33,6 +34,7 @@ export class ChannelsService {
     private readonly syncOrchestrator: ChannelSyncOrchestrator,
     private readonly prisma: PrismaService,
     private readonly channelAccess: ChannelAccessService,
+    private readonly limitEnforcer: LimitEnforcerService,
   ) {}
 
   async create(
@@ -40,6 +42,8 @@ export class ChannelsService {
     dto: CreateChannelDto,
     creator?: { userOrganizationId: string; role: OrgRole },
   ) {
+    await this.limitEnforcer.assertWithinLimit(organizationId, 'channel');
+
     let channel = await this.repository.create({
       organizationId,
       type: dto.type,
