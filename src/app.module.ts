@@ -23,6 +23,7 @@ import { ChannelAccessModule } from './modules/iam/channel-access/channel-access
 import { AiAgentsModule } from './modules/ai-agents/ai-agents.module';
 import { InboxViewsModule } from './modules/inbox-views/inbox-views.module';
 import { PipelinesModule } from './modules/pipelines/pipelines.module';
+import { TasksModule } from './modules/tasks/tasks.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { EmailModule } from './modules/email/email.module';
@@ -74,6 +75,7 @@ import redisConfig from './config/redis.config';
     AiAgentsModule,
     InboxViewsModule,
     PipelinesModule,
+    TasksModule,
     BackupModule,
     AuditModule,
     EmailModule,
