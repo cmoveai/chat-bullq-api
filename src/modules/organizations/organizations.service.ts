@@ -11,6 +11,10 @@ import { OrganizationsRepository } from './organizations.repository';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import {
+  CustomContactFieldDto,
+  SetCustomContactFieldsDto,
+} from './dto/custom-contact-fields.dto';
 
 @Injectable()
 export class OrganizationsService {
@@ -154,5 +158,53 @@ export class OrganizationsService {
 
     await this.repository.removeMember(membership.id);
     this.logger.log(`Member ${memberId} removed from org ${orgId} by ${actorId}`);
+  }
+
+  // ─── Custom Contact Fields ─────────────────────
+  //
+  // Storage: `Organization.settings.customContactFields` (JSON array).
+  // Values per contact stored in `Contact.metadata.customFields` (Record<id,value>).
+
+  async getCustomContactFields(orgId: string): Promise<CustomContactFieldDto[]> {
+    const org = await this.getOrganization(orgId);
+    const settings = (org.settings as Record<string, unknown> | null) ?? {};
+    const fields = settings['customContactFields'];
+    if (!Array.isArray(fields)) return [];
+    return fields as CustomContactFieldDto[];
+  }
+
+  async setCustomContactFields(
+    orgId: string,
+    dto: SetCustomContactFieldsDto,
+  ): Promise<CustomContactFieldDto[]> {
+    const org = await this.getOrganization(orgId);
+
+    // Dedupe IDs · garante consistência (UI usa id como key)
+    const seen = new Set<string>();
+    for (const f of dto.fields) {
+      if (seen.has(f.id)) {
+        throw new BadRequestException(
+          `Campo customizado com id duplicado: "${f.id}"`,
+        );
+      }
+      seen.add(f.id);
+      if (f.type === 'select' && (!f.options || f.options.length === 0)) {
+        throw new BadRequestException(
+          `Campo "${f.label}" do tipo select precisa de pelo menos uma opção`,
+        );
+      }
+    }
+
+    // Sort por order
+    const sorted = [...dto.fields].sort((a, b) => a.order - b.order);
+
+    const settings = (org.settings as Record<string, unknown> | null) ?? {};
+    const next = { ...settings, customContactFields: sorted };
+
+    await this.repository.update(orgId, { settings: next });
+    this.logger.log(
+      `Custom contact fields atualizados em org ${orgId}: ${sorted.length} fields`,
+    );
+    return sorted;
   }
 }

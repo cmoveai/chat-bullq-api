@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Post,
+  Put,
   Delete,
   Body,
   Param,
@@ -15,6 +16,7 @@ import { OrganizationsService } from './organizations.service';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { SetCustomContactFieldsDto } from './dto/custom-contact-fields.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../common/guards';
 import { CurrentUser, CurrentOrg, Roles, Public } from '../../common/decorators';
 
@@ -36,6 +38,26 @@ export class OrganizationsController {
   @ApiOperation({ summary: 'Update current organization' })
   update(@CurrentOrg('id') orgId: string, @Body() dto: UpdateOrganizationDto) {
     return this.service.updateOrganization(orgId, dto);
+  }
+
+  @Get('current/custom-contact-fields')
+  @ApiOperation({
+    summary: 'List custom contact fields defined for this org (settings JSON)',
+  })
+  getCustomContactFields(@CurrentOrg('id') orgId: string) {
+    return this.service.getCustomContactFields(orgId);
+  }
+
+  @Put('current/custom-contact-fields')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({
+    summary: 'Replace custom contact fields list (full replace)',
+  })
+  setCustomContactFields(
+    @CurrentOrg('id') orgId: string,
+    @Body() dto: SetCustomContactFieldsDto,
+  ) {
+    return this.service.setCustomContactFields(orgId, dto);
   }
 
   @Post('current/onboarding')
