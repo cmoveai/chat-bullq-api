@@ -187,6 +187,7 @@ model Organization {
   cobrancas     Cobranca[]
   tasks         Task[]
   automations   Automation[]
+  knowledgeBases KnowledgeBase[]
 
   @@map("organizations")
 }
@@ -846,6 +847,7 @@ model AiAgent {
   handoffsTo   AiAgentHandoff[] @relation("HandoffTo")
   activeOn     Conversation[]   @relation("ActiveAgent")
   skills       AiAgentSkill[]
+  knowledgeBaseLinks AgentKnowledgeBase[]
 
   @@index([organizationId], name: "idx_ai_agent_org")
   @@index([organizationId, kind], name: "idx_ai_agent_org_kind")
@@ -1594,4 +1596,45 @@ model Automation {
   @@index([organizationId, type, isActive])
   @@index([channelId])
   @@map("automations")
+}
+
+// ─── Knowledge Bases (per-agent context) ──────────
+
+enum KnowledgeBaseSourceType {
+  UPLOAD
+  TEXT
+}
+
+model KnowledgeBase {
+  id              String                  @id @default(cuid())
+  organizationId  String                  @map("organization_id")
+  name            String
+  description     String?
+  content         String
+  sourceType      KnowledgeBaseSourceType @default(TEXT) @map("source_type")
+  sourceFilename  String?                 @map("source_filename")
+  sourceMimeType  String?                 @map("source_mime_type")
+  sourceSizeBytes Int?                    @map("source_size_bytes")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+  deletedAt       DateTime?               @map("deleted_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agentLinks   AgentKnowledgeBase[]
+
+  @@index([organizationId])
+  @@map("knowledge_bases")
+}
+
+model AgentKnowledgeBase {
+  agentId         String   @map("agent_id")
+  knowledgeBaseId String   @map("knowledge_base_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  agent         AiAgent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, knowledgeBaseId])
+  @@index([knowledgeBaseId])
+  @@map("agent_knowledge_bases")
 }

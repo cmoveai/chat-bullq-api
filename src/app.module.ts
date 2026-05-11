@@ -26,6 +26,7 @@ import { PipelinesModule } from './modules/pipelines/pipelines.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { AutomationsModule } from './modules/automations/automations.module';
+import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { EmailModule } from './modules/email/email.module';
@@ -80,6 +81,7 @@ import redisConfig from './config/redis.config';
     TasksModule,
     OffersModule,
     AutomationsModule,
+    KnowledgeBasesModule,
     BackupModule,
     AuditModule,
     EmailModule,
