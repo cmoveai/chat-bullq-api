@@ -202,9 +202,11 @@ export class OrganizationsService {
     const next = {
       ...settings,
       customContactFields: sorted,
-    } as Prisma.InputJsonValue;
+    };
 
-    await this.repository.update(orgId, { settings: next });
+    await this.repository.update(orgId, {
+      settings: next as unknown as Prisma.InputJsonValue,
+    });
     this.logger.log(
       `Custom contact fields atualizados em org ${orgId}: ${sorted.length} fields`,
     );
