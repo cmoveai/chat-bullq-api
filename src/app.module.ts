@@ -25,6 +25,7 @@ import { InboxViewsModule } from './modules/inbox-views/inbox-views.module';
 import { PipelinesModule } from './modules/pipelines/pipelines.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { OffersModule } from './modules/offers/offers.module';
+import { AutomationsModule } from './modules/automations/automations.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { EmailModule } from './modules/email/email.module';
@@ -78,6 +79,7 @@ import redisConfig from './config/redis.config';
     PipelinesModule,
     TasksModule,
     OffersModule,
+    AutomationsModule,
     BackupModule,
     AuditModule,
     EmailModule,

@@ -186,6 +186,7 @@ model Organization {
   usageEvents   UsageEvent[]
   cobrancas     Cobranca[]
   tasks         Task[]
+  automations   Automation[]
 
   @@map("organizations")
 }
@@ -265,6 +266,7 @@ model Channel {
   syncJobs        ChannelSyncJob[]
   channelAgents   ChannelAgent[]
   aiAgentChannels AiAgentChannel[]
+  automations     Automation[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
   @@map("channels")
@@ -1562,4 +1564,34 @@ model Task {
   @@index([cardId])
   @@index([contactId])
   @@map("tasks")
+}
+
+// ─── Automations (Instagram DM, WhatsApp, Email triggers) ─
+
+enum AutomationType {
+  INSTAGRAM_DM_FROM_COMMENT
+  // (futuro) WHATSAPP_SCHEDULED, EMAIL_DRIP, AGENDA_TRIGGER, etc
+}
+
+model Automation {
+  id              String         @id @default(cuid())
+  organizationId  String         @map("organization_id")
+  channelId       String?        @map("channel_id")
+  name            String
+  description     String?
+  type            AutomationType
+  isActive        Boolean        @default(true) @map("is_active")
+  config          Json           @default("{}")
+  executionsCount Int            @default(0) @map("executions_count")
+  lastExecutedAt  DateTime?      @map("last_executed_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  deletedAt       DateTime?      @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel?     @relation(fields: [channelId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, type, isActive])
+  @@index([channelId])
+  @@map("automations")
 }
