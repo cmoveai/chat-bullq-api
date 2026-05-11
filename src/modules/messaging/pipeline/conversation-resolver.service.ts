@@ -105,6 +105,21 @@ export class ConversationResolverService {
         this.logger.log(
           `New conversation created: ${conversation.id} (protocol: ${protocol})`,
         );
+
+        // Auto-vincular Card↔Conversation · se a org tem pipeline default,
+        // cria um Card no primeiro stage e linka à conversa. Best-effort:
+        // se falhar, NÃO derruba o pipeline de criação da conversation.
+        try {
+          await this.autoCreateLinkedCard(
+            organizationId,
+            conversation.id,
+            contactId,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `Auto-create card falhou pra conversation ${conversation.id}: ${(err as Error).message}`,
+          );
+        }
         return {
           conversationId: conversation.id,
           status: ConversationStatus.PENDING,
@@ -112,6 +127,98 @@ export class ConversationResolverService {
           wasReopened: false,
         };
       },
+    );
+  }
+
+  /**
+   * Quando uma conversation NOVA é criada, automaticamente cria um Card
+   * vinculado no pipeline default da org · resolve o GAP do CRM AutomateFlow
+   * onde lead novo cai numa "Boas-vindas" sem ação manual.
+   *
+   * Best-effort: silencia erro (org sem pipeline default = no-op).
+   * Usa contato como título do card, primeiro stage do pipeline default,
+   * order = MAX+1 do stage.
+   */
+  private async autoCreateLinkedCard(
+    organizationId: string,
+    conversationId: string,
+    contactId: string,
+  ): Promise<void> {
+    const defaultPipeline = await this.prisma.pipeline.findFirst({
+      where: { organizationId, isDefault: true, archived: false },
+      include: {
+        stages: { orderBy: { order: 'asc' }, take: 1 },
+      },
+    });
+    if (!defaultPipeline) {
+      this.logger.debug(
+        `Org ${organizationId} sem pipeline default · pulando auto-card`,
+      );
+      return;
+    }
+    if (!defaultPipeline.stages.length) {
+      this.logger.warn(
+        `Pipeline default ${defaultPipeline.id} sem stages · pulando auto-card`,
+      );
+      return;
+    }
+
+    const firstStage = defaultPipeline.stages[0];
+
+    // Idempotência: se já existe um card aberto pra essa conversa, não duplica
+    const existing = await this.prisma.card.findFirst({
+      where: {
+        organizationId,
+        conversationId,
+        status: 'OPEN',
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      this.logger.debug(
+        `Card já existe pra conversation ${conversationId} · pulando auto-card`,
+      );
+      return;
+    }
+
+    // Calcula order no fim do stage
+    const last = await this.prisma.card.findFirst({
+      where: { pipelineId: defaultPipeline.id, stageId: firstStage.id },
+      orderBy: { order: 'desc' },
+      select: { order: true },
+    });
+    const order = (last?.order ?? -1) + 1;
+
+    // Resolve título do card pelo nome do contato (fallback pra phone/email/id)
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { name: true, phone: true, email: true },
+    });
+    const title =
+      contact?.name ||
+      contact?.phone ||
+      contact?.email ||
+      'Nova conversa';
+
+    const card = await this.prisma.card.create({
+      data: {
+        organizationId,
+        pipelineId: defaultPipeline.id,
+        stageId: firstStage.id,
+        title,
+        contactId,
+        conversationId,
+        order,
+        metadata: {
+          autoCreated: true,
+          source: 'conversation-resolver',
+          createdAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    this.logger.log(
+      `Auto-created card ${card.id} (pipeline ${defaultPipeline.name} / stage ${firstStage.name}) linked to conversation ${conversationId}`,
     );
   }
 
