@@ -68,6 +68,29 @@ export class InstagramHttpClient {
     }
   }
 
+  /**
+   * Sends a private DM in reply to a public comment.
+   * Meta requires `recipient.comment_id` (not `recipient.id`) within the 7-day
+   * window after the comment was posted. The reply lands in the commenter's DMs
+   * and opens a new conversation thread.
+   */
+  async sendPrivateReply(
+    channel: Channel,
+    commentId: string,
+    text: string,
+  ): Promise<any> {
+    const client = this.createClient(channel);
+    try {
+      const { data } = await client.post('/me/messages', {
+        recipient: { comment_id: commentId },
+        message: { text },
+      });
+      return data;
+    } catch (err: any) {
+      throw this.wrapGraphError(err, 'sendPrivateReply');
+    }
+  }
+
   async listConversations(
     channel: Channel,
     cursor?: string,

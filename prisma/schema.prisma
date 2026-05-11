@@ -779,6 +779,12 @@ enum AiAgentTrigger {
   NO_HUMAN_ASSIGNED
 }
 
+enum AgentLeadQualificationTrigger {
+  AFTER_EACH_MESSAGE
+  AFTER_N_MESSAGES
+  WHEN_CONVERSATION_ENDS
+}
+
 enum AiRunStatus {
   RUNNING
   COMPLETED
@@ -833,6 +839,23 @@ model AiAgent {
   // Ajustável por agent no Jarvis.
   followUpEnabled      Boolean @default(true) @map("follow_up_enabled")
   followUpCadenceHours Int[]   @default([4, 24, 72, 168, 336]) @map("follow_up_cadence_hours")
+
+  // ─── Lead capture & qualification (TOP 4 · AutomateFlow parity) ─
+  // Quando ON, este agent tenta coletar Nome / Tel / Email (e custom
+  // contact fields da org) durante a conversa. Resultado fica em
+  // Contact.metadata.customFields.
+  collectContactData Boolean @default(false) @map("collect_contact_data")
+  collectStandardFields String[] @default(["name", "phone", "email"]) @map("collect_standard_fields")
+  collectCustomFieldIds String[] @default([]) @map("collect_custom_field_ids")
+
+  // Lead qualification: roda um pass de IA separado pra classificar
+  // o lead (Quente / Morno / Frio · score · próxima ação). Resultado
+  // salvo em Conversation.metadata.leadQualification.
+  leadQualificationEnabled Boolean @default(false) @map("lead_qualification_enabled")
+  leadQualificationModelId String? @map("lead_qualification_model_id")
+  leadQualificationTrigger AgentLeadQualificationTrigger @default(WHEN_CONVERSATION_ENDS) @map("lead_qualification_trigger")
+  leadQualificationMessageCount Int @default(5) @map("lead_qualification_message_count")
+  leadQualificationPrompt String? @map("lead_qualification_prompt")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1590,12 +1613,35 @@ model Automation {
   updatedAt       DateTime       @updatedAt @map("updated_at")
   deletedAt       DateTime?      @map("deleted_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  channel      Channel?     @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel?              @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  executions   AutomationExecution[]
 
   @@index([organizationId, type, isActive])
   @@index([channelId])
   @@map("automations")
+}
+
+enum AutomationExecutionStatus {
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+model AutomationExecution {
+  id              String                    @id @default(cuid())
+  automationId    String                    @map("automation_id")
+  externalEventId String                    @map("external_event_id")
+  status          AutomationExecutionStatus
+  errorMessage    String?                   @map("error_message")
+  metadata        Json                      @default("{}")
+  executedAt      DateTime                  @default(now()) @map("executed_at")
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, externalEventId])
+  @@index([automationId, executedAt])
+  @@map("automation_executions")
 }
 
 // ─── Knowledge Bases (per-agent context) ──────────

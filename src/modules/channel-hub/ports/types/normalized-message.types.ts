@@ -93,10 +93,23 @@ export interface StatusUpdate {
   errorMessage?: string;
 }
 
+export interface NormalizedInboundComment {
+  externalCommentId: string;
+  externalContactId: string;
+  contactUsername?: string;
+  text: string;
+  mediaId?: string;
+  parentCommentId?: string;
+  timestamp: Date;
+  channelType: ChannelType;
+  rawPayload: unknown;
+}
+
 export interface WebhookParseResult {
   messages: NormalizedInboundMessage[];
   statuses: StatusUpdate[];
   errors: WebhookError[];
+  comments?: NormalizedInboundComment[];
 }
 
 export interface WebhookError {

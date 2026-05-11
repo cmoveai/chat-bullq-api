@@ -17,6 +17,7 @@ import { Request, Response } from 'express';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Public } from '../../common/decorators';
+import { AutomationEngine } from '../automations/automation-engine.service';
 import { ChannelAdapterRegistry } from './channel-adapter.registry';
 import { ChannelsService } from './channels/channels.service';
 import { WebhookEventsService } from './webhook-events.service';
@@ -32,6 +33,7 @@ export class WebhookGatewayController {
     private readonly registry: ChannelAdapterRegistry,
     private readonly channelsService: ChannelsService,
     private readonly webhookEvents: WebhookEventsService,
+    private readonly automationEngine: AutomationEngine,
     @InjectQueue('inbound-messages') private readonly inboundQueue: Queue,
   ) {}
 
@@ -153,6 +155,18 @@ export class WebhookGatewayController {
             removeOnFail: false,
           },
         );
+      }
+
+      // IG comments → automation engine (inline, best-effort).
+      // Webhook deve responder 200 mesmo se a automação falhar.
+      for (const comment of parseResult.comments ?? []) {
+        this.automationEngine
+          .handleInstagramComment(channel.id, comment)
+          .catch((err) =>
+            this.logger.error(
+              `AutomationEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
+            ),
+          );
       }
     }
 

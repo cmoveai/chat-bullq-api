@@ -70,6 +70,7 @@ export class InstagramInboundAdapter implements InboundChannelPort {
       messages: [],
       statuses: [],
       errors: [],
+      comments: [],
     };
 
     try {
@@ -109,6 +110,18 @@ export class InstagramInboundAdapter implements InboundChannelPort {
             const status = this.mapper.normalizeReadStatus(event);
             if (status) {
               result.statuses.push(status);
+            }
+          }
+        }
+
+        // Page/IG-level field updates (e.g. comments on posts/reels).
+        // Meta delivers these via entry.changes[] with field='comments'.
+        const changes = entry?.changes || [];
+        for (const change of changes) {
+          if (change?.field === 'comments') {
+            const normalized = this.mapper.normalizeComment(change);
+            if (normalized) {
+              result.comments!.push(normalized);
             }
           }
         }

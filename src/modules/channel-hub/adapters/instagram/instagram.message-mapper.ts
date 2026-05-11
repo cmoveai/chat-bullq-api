@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ChannelType } from '@prisma/client';
 import {
+  NormalizedInboundComment,
   NormalizedInboundMessage,
   NormalizedOutboundMessage,
   MessageContentType,
@@ -75,6 +76,28 @@ export class InstagramMessageMapper {
       };
     }
     return undefined;
+  }
+
+  normalizeComment(change: Record<string, any>): NormalizedInboundComment | null {
+    const value = change?.value;
+    if (!value?.id || !value?.from?.id) return null;
+    const text = typeof value.text === 'string' ? value.text : '';
+
+    return {
+      externalCommentId: String(value.id),
+      externalContactId: String(value.from.id),
+      contactUsername: value.from.username
+        ? String(value.from.username)
+        : undefined,
+      text,
+      mediaId: value.media?.id ? String(value.media.id) : undefined,
+      parentCommentId: value.parent_id ? String(value.parent_id) : undefined,
+      timestamp: value.created_time
+        ? new Date(Number(value.created_time) * 1000)
+        : new Date(),
+      channelType: ChannelType.INSTAGRAM,
+      rawPayload: change,
+    };
   }
 
   normalizeStatus(messaging: Record<string, any>): StatusUpdate | null {
