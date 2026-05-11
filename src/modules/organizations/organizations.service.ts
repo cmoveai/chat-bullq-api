@@ -6,7 +6,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { OrgRole } from '@prisma/client';
+import { OrgRole, Prisma } from '@prisma/client';
 import { OrganizationsRepository } from './organizations.repository';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
@@ -199,7 +199,10 @@ export class OrganizationsService {
     const sorted = [...dto.fields].sort((a, b) => a.order - b.order);
 
     const settings = (org.settings as Record<string, unknown> | null) ?? {};
-    const next = { ...settings, customContactFields: sorted };
+    const next = {
+      ...settings,
+      customContactFields: sorted,
+    } as Prisma.InputJsonValue;
 
     await this.repository.update(orgId, { settings: next });
     this.logger.log(
