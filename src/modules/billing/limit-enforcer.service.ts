@@ -1,14 +1,20 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SubscriptionsService } from './subscriptions.service';
+import { UsageService } from './usage.service';
 
 export type LimitKind = 'channel' | 'agent' | 'tool' | 'member';
+export type MonthlyKind = 'conversation';
 
 const KIND_LABEL: Record<LimitKind, string> = {
   channel: 'canal',
   agent: 'agente',
   tool: 'ferramenta personalizada',
   member: 'membro',
+};
+
+const MONTHLY_LABEL: Record<MonthlyKind, string> = {
+  conversation: 'conversa no mês',
 };
 
 @Injectable()
@@ -18,6 +24,7 @@ export class LimitEnforcerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly subscriptions: SubscriptionsService,
+    private readonly usage: UsageService,
   ) {}
 
   /**
@@ -48,12 +55,44 @@ export class LimitEnforcerService {
     }
   }
 
+  /**
+   * Lança ForbiddenException quando a org atingiu o limite mensal do plano
+   * pra mais 1 evento `kind` (conversation, etc). null = ilimitado.
+   * Usado antes de criar conversation, etc.
+   */
+  async assertMonthlyWithinLimit(organizationId: string, kind: MonthlyKind): Promise<void> {
+    const sub = await this.subscriptions.findOrCreateForOrg(organizationId);
+    const limit = this.getMonthlyLimit(sub.plan, kind);
+    if (limit === null) return;
+
+    const used = await this.usage.countCurrentMonth(organizationId, kind);
+    if (used >= limit) {
+      const planName = sub.plan.name;
+      const label = MONTHLY_LABEL[kind];
+      throw new ForbiddenException({
+        code: 'PLAN_LIMIT_MONTHLY_REACHED',
+        kind,
+        limit,
+        used,
+        planCode: sub.plan.code,
+        planName,
+        message: `Plano ${planName} permite ${limit} ${label}${limit === 1 ? '' : 's'} · você já usou ${used} este mês. Faça upgrade em /settings/billing.`,
+      });
+    }
+  }
+
   private getLimit(plan: { maxChannels: number | null; maxAgents: number | null; maxTools: number | null; maxMembers: number | null }, kind: LimitKind): number | null {
     switch (kind) {
       case 'channel': return plan.maxChannels;
       case 'agent':   return plan.maxAgents;
       case 'tool':    return plan.maxTools;
       case 'member':  return plan.maxMembers;
+    }
+  }
+
+  private getMonthlyLimit(plan: { maxConversationsMonth: number | null }, kind: MonthlyKind): number | null {
+    switch (kind) {
+      case 'conversation': return plan.maxConversationsMonth;
     }
   }
 
@@ -73,10 +112,13 @@ export class LimitEnforcerService {
         return this.prisma.aiTool.count({
           where: { organizationId },
         });
-      case 'member':
-        return this.prisma.userOrganization.count({
-          where: { organizationId },
-        });
+      case 'member': {
+        const [members, pendingInvites] = await Promise.all([
+          this.prisma.userOrganization.count({ where: { organizationId } }),
+          this.prisma.invitation.count({ where: { organizationId, status: 'PENDING' } }),
+        ]);
+        return members + pendingInvites;
+      }
     }
   }
 }

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConversationStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { IdempotencyService } from './idempotency.service';
+import { LimitEnforcerService } from '../../billing/limit-enforcer.service';
+import { UsageService } from '../../billing/usage.service';
 
 export interface ResolvedConversation {
   conversationId: string;
@@ -24,6 +26,8 @@ export class ConversationResolverService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
+    private readonly limitEnforcer: LimitEnforcerService,
+    private readonly usage: UsageService,
   ) {}
 
   async resolve(
@@ -84,6 +88,8 @@ export class ConversationResolverService {
           }
         }
 
+        await this.limitEnforcer.assertMonthlyWithinLimit(organizationId, 'conversation');
+
         const protocol = this.generateProtocol();
         const conversation = await this.prisma.conversation.create({
           data: {
@@ -94,6 +100,11 @@ export class ConversationResolverService {
             protocol,
             isGroup: isGroup || false,
           },
+        });
+        this.usage.record(organizationId, 'conversation', {
+          conversationId: conversation.id,
+          channelId,
+          contactId,
         });
         await this.prisma.conversationAuditLog.create({
           data: {

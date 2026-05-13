@@ -19,6 +19,7 @@ import { PasswordPolicyService } from './password-policy.service';
 import { AuthTokensService } from './auth-tokens.service';
 import { EmailService } from '../email/email.service';
 import { SubscriptionsService } from '../billing/subscriptions.service';
+import { LimitEnforcerService } from '../billing/limit-enforcer.service';
 import { AuthTokenType } from '@prisma/client';
 
 const BCRYPT_ROUNDS = 12;
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly email: EmailService,
     private readonly subscriptions: SubscriptionsService,
     private readonly authTokens: AuthTokensService,
+    private readonly limitEnforcer: LimitEnforcerService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -173,6 +175,8 @@ export class AuthService {
     if (invitation.email !== dto.email) {
       throw new BadRequestException('Email does not match the invitation');
     }
+
+    await this.limitEnforcer.assertWithinLimit(invitation.organizationId, 'member');
 
     const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({

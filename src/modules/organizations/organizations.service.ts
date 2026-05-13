@@ -15,12 +15,16 @@ import {
   CustomContactFieldDto,
   SetCustomContactFieldsDto,
 } from './dto/custom-contact-fields.dto';
+import { LimitEnforcerService } from '../billing/limit-enforcer.service';
 
 @Injectable()
 export class OrganizationsService {
   private readonly logger = new Logger(OrganizationsService.name);
 
-  constructor(private readonly repository: OrganizationsRepository) {}
+  constructor(
+    private readonly repository: OrganizationsRepository,
+    private readonly limitEnforcer: LimitEnforcerService,
+  ) {}
 
   async getOrganization(orgId: string) {
     const org = await this.repository.findById(orgId);
@@ -75,6 +79,8 @@ export class OrganizationsService {
         throw new ConflictException('User is already a member of this organization');
       }
     }
+
+    await this.limitEnforcer.assertWithinLimit(orgId, 'member');
 
     // Create invitation (works for both existing and non-existing users)
     const invitation = await this.repository.createInvitation(orgId, dto.email, dto.role, inviterId);
