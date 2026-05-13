@@ -5,7 +5,7 @@ import type { Request } from 'express';
 import { IsIn, IsString } from 'class-validator';
 import { JwtAuthGuard, OrgGuard } from '../../common/guards';
 import { CurrentOrg, CurrentUser } from '../../common/decorators';
-import { KirvanoService } from './kirvano.service';
+import { StripeService } from './stripe.service';
 import { PrismaService } from '../../database/prisma.service';
 
 class CreateCheckoutDto {
@@ -23,7 +23,7 @@ class CreateCheckoutDto {
 @Controller('billing/checkout')
 export class CheckoutController {
   constructor(
-    private readonly kirvano: KirvanoService,
+    private readonly stripe: StripeService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -42,7 +42,7 @@ export class CheckoutController {
       where: { id: user.id },
       select: { phone: true, cpfCnpj: true },
     });
-    return this.kirvano.createCheckout({
+    return this.stripe.createCheckout({
       planId: dto.planId,
       cycle: dto.cycle,
       paymentMethod: dto.paymentMethod,

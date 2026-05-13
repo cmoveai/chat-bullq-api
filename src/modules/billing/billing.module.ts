@@ -4,26 +4,26 @@ import { PlansService } from './plans.service';
 import { SubscriptionsService } from './subscriptions.service';
 import { UsageService } from './usage.service';
 import { LimitEnforcerService } from './limit-enforcer.service';
-import { KirvanoService } from './kirvano.service';
+import { StripeService } from './stripe.service';
 import { CheckoutController } from './checkout.controller';
-import { KirvanoWebhookController } from './kirvano-webhook.controller';
+import { StripeWebhookController } from './stripe-webhook.controller';
 
 @Global()
 @Module({
-  controllers: [BillingController, CheckoutController, KirvanoWebhookController],
+  controllers: [BillingController, CheckoutController, StripeWebhookController],
   providers: [
     PlansService,
     SubscriptionsService,
     UsageService,
     LimitEnforcerService,
-    KirvanoService,
+    StripeService,
   ],
   exports: [
     PlansService,
     SubscriptionsService,
     UsageService,
     LimitEnforcerService,
-    KirvanoService,
+    StripeService,
   ],
 })
 export class BillingModule {}
