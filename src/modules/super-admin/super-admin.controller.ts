@@ -8,7 +8,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { SubscriptionStatus } from '@prisma/client';
+import {
+  InvoiceStatus,
+  SubscriptionStatus,
+  SupportTicketPriority,
+  SupportTicketStatus,
+} from '@prisma/client';
 import { SuperAdminService } from './super-admin.service';
 import { JwtAuthGuard, SuperAdminGuard } from '../../common/guards';
 import { SuperAdmin } from '../../common/decorators';
@@ -53,5 +58,42 @@ export class SuperAdminController {
   @ApiOperation({ summary: 'Reativa org manualmente (ACTIVE)' })
   reactivateOrg(@Param('id') id: string) {
     return this.service.reactivateOrg(id);
+  }
+
+  @Get('invoices')
+  @ApiOperation({ summary: 'Lista faturas · status + resumo financeiro mês' })
+  listInvoices(
+    @Query('status') status?: InvoiceStatus,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.service.listInvoices({
+      status,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      offset: offset ? parseInt(offset, 10) : undefined,
+    });
+  }
+
+  @Get('support-tickets')
+  @ApiOperation({ summary: 'Lista tickets de suporte · status + priority' })
+  listSupportTickets(
+    @Query('status') status?: SupportTicketStatus,
+    @Query('priority') priority?: SupportTicketPriority,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.service.listSupportTickets({
+      status,
+      priority,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      offset: offset ? parseInt(offset, 10) : undefined,
+    });
+  }
+
+  @Get('analytics/mrr-history')
+  @ApiOperation({ summary: 'Série diária de MRR · activeSubs · trialSubs' })
+  mrrHistory(@Query('days') days?: string) {
+    const n = days ? Math.min(Math.max(parseInt(days, 10), 7), 365) : 30;
+    return this.service.mrrHistory(n);
   }
 }
