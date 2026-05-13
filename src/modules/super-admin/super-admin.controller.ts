@@ -96,4 +96,10 @@ export class SuperAdminController {
     const n = days ? Math.min(Math.max(parseInt(days, 10), 7), 365) : 30;
     return this.service.mrrHistory(n);
   }
+
+  @Get('finance/snapshot')
+  @ApiOperation({ summary: 'Snapshot financeiro 40/20/40 do mês atual' })
+  financeSnapshot() {
+    return this.service.getFinanceSnapshot();
+  }
 }

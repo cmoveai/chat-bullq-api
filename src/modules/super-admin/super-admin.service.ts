@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   InvoiceStatus,
   SubscriptionStatus,
@@ -20,9 +21,29 @@ export interface SuperAdminKpis {
   generatedAt: string;
 }
 
+export interface FinanceSnapshot {
+  reference: string; // YYYY-MM
+  inflowsBrl: number; // receita paga este mês
+  variableBrl: number; // gateway + impostos (estimado · 10% inflows)
+  fixedBrl: number; // SUPER_ADMIN_FIXED_COSTS_BRL · default 5086
+  marginBrl: number;
+  inflowsPct: 100; // baseline
+  variablePct: number;
+  fixedPct: number;
+  marginPct: number;
+  isMethodPassing: boolean; // 40/20/40 saudável?
+  llmCostMonthUsd: number;
+  llmCostMonthBrl: number; // estimado a 5.20 BRL/USD
+  receivable7dBrl: number;
+  receivable7dCount: number;
+}
+
 @Injectable()
 export class SuperAdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   async getKpis(): Promise<SuperAdminKpis> {
     const startOfMonth = new Date();
@@ -373,6 +394,72 @@ export class SuperAdminService {
     }
 
     return { days, series };
+  }
+
+  /**
+   * Snapshot financeiro 40/20/40 · usa custos fixos do env SUPER_ADMIN_FIXED_COSTS_BRL
+   * (default 5086 que é o mapa de custos CMOVE.AI atual). Variáveis estimadas
+   * como 10% das entradas (gateway 4% + Anexo III 6%).
+   */
+  async getFinanceSnapshot(): Promise<FinanceSnapshot> {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const next7days = new Date();
+    next7days.setDate(next7days.getDate() + 7);
+
+    const [paidMonth, llmCostAgg, receivable7d] = await Promise.all([
+      this.prisma.billingInvoice.aggregate({
+        _sum: { amountCents: true },
+        where: {
+          status: InvoiceStatus.PAID,
+          paidAt: { gte: startOfMonth },
+        },
+      }),
+      this.prisma.aiAgentRun.aggregate({
+        _sum: { costUsd: true },
+        where: { startedAt: { gte: startOfMonth } },
+      }),
+      this.prisma.billingInvoice.aggregate({
+        _sum: { amountCents: true },
+        _count: true,
+        where: {
+          status: { in: [InvoiceStatus.PENDING, InvoiceStatus.OVERDUE] },
+          dueDate: { gte: now, lte: next7days },
+        },
+      }),
+    ]);
+
+    const inflowsBrl = (paidMonth._sum.amountCents ?? 0) / 100;
+    const variableBrl = inflowsBrl * 0.1; // 10% gateway + impostos
+    const fixedBrl = Number(this.config.get<string>('SUPER_ADMIN_FIXED_COSTS_BRL', '5086'));
+    const marginBrl = inflowsBrl - variableBrl - fixedBrl;
+    const llmCostMonthUsd = Number(llmCostAgg._sum.costUsd ?? 0);
+    const llmCostMonthBrl = llmCostMonthUsd * 5.2;
+
+    const variablePct = inflowsBrl > 0 ? Math.round((variableBrl / inflowsBrl) * 100) : 0;
+    const fixedPct = inflowsBrl > 0 ? Math.round((fixedBrl / inflowsBrl) * 100) : 0;
+    const marginPct = inflowsBrl > 0 ? Math.round((marginBrl / inflowsBrl) * 100) : 0;
+    const isMethodPassing = variablePct <= 40 && fixedPct <= 20 && marginPct >= 40;
+
+    const reference =
+      String(now.getFullYear()) + '-' + String(now.getMonth() + 1).padStart(2, '0');
+
+    return {
+      reference,
+      inflowsBrl,
+      variableBrl,
+      fixedBrl,
+      marginBrl,
+      inflowsPct: 100,
+      variablePct,
+      fixedPct,
+      marginPct,
+      isMethodPassing,
+      llmCostMonthUsd,
+      llmCostMonthBrl,
+      receivable7dBrl: (receivable7d._sum.amountCents ?? 0) / 100,
+      receivable7dCount: receivable7d._count,
+    };
   }
 
   private async countMessagesToday(): Promise<number> {
