@@ -55,6 +55,10 @@ export class StripeService {
       };
     }
 
+    const pixEnabled = this.config.get<string>('STRIPE_PIX_ENABLED', 'false') === 'true';
+    if (req.paymentMethod === 'pix' && !pixEnabled) {
+      throw new BadRequestException('Pix temporariamente indisponível · use cartão');
+    }
     const paymentMethodTypes: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
       req.paymentMethod === 'pix' ? ['pix'] : ['card'];
 
