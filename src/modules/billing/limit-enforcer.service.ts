@@ -56,6 +56,43 @@ export class LimitEnforcerService {
   }
 
   /**
+   * Bloqueia novos agent runs quando a org já consumiu todo o orçamento mensal
+   * de tokens LLM. `plan.aiCreditCents` é o teto mensal em centavos BRL
+   * (5.20 BRL/USD). Quando 0, não bloqueia · quando > 0 e gasto >= teto, bloqueia.
+   */
+  async assertWithinCreditBudget(organizationId: string): Promise<void> {
+    const sub = await this.subscriptions.findOrCreateForOrg(organizationId);
+    const budgetCents = sub.plan.aiCreditCents ?? 0;
+    if (budgetCents <= 0) return; // 0 = sem teto · plano não enforce LLM cost
+
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const agg = await this.prisma.aiAgentRun.aggregate({
+      _sum: { costUsd: true },
+      where: {
+        conversation: { organizationId },
+        startedAt: { gte: startOfMonth },
+      },
+    });
+    const usdSpent = Number(agg._sum.costUsd ?? 0);
+    const brlSpentCents = Math.round(usdSpent * 5.2 * 100);
+
+    if (brlSpentCents >= budgetCents) {
+      throw new ForbiddenException({
+        code: 'PLAN_LLM_BUDGET_REACHED',
+        kind: 'llm_credit',
+        budgetCents,
+        spentCents: brlSpentCents,
+        planCode: sub.plan.code,
+        planName: sub.plan.name,
+        message: `Plano ${sub.plan.name} tem orçamento de R$ ${(budgetCents / 100).toFixed(2)} em IA por mês · você já gastou R$ ${(brlSpentCents / 100).toFixed(2)}. Faça upgrade em /settings/billing.`,
+      });
+    }
+  }
+
+  /**
    * Lança ForbiddenException quando a org atingiu o limite mensal do plano
    * pra mais 1 evento `kind` (conversation, etc). null = ilimitado.
    * Usado antes de criar conversation, etc.

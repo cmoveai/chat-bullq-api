@@ -62,4 +62,50 @@ export class BillingController {
       },
     };
   }
+
+  /**
+   * Feature flags por plano · frontend consome pra esconder/mostrar UI.
+   * Regra: STARTER tem básico, GROWTH adiciona email+campanhas, PRO tem tudo.
+   * Planos legados (SOLO/TIME/NEGOCIO/EMPRESA) ganham feature por proximidade.
+   */
+  @Get('me/features')
+  @UseGuards(JwtAuthGuard, OrgGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Feature flags da org atual · derivado do plano' })
+  async getFeatures(@CurrentOrg('id') orgId: string) {
+    const sub = await this.subscriptions.findOrCreateForOrg(orgId);
+    const code = sub.plan.code;
+    const isStarterTier = code === 'STARTER' || code === 'SOLO';
+    const isGrowthTier = code === 'GROWTH' || code === 'TIME';
+    const isProTier = code === 'PRO' || code === 'NEGOCIO' || code === 'EMPRESA';
+
+    return {
+      data: {
+        planCode: code,
+        planName: sub.plan.name,
+        features: {
+          // Comunicação
+          whatsappChannels: true,
+          instagramChannels: !isStarterTier,
+          emailSend: isGrowthTier || isProTier,
+          emailReceive: isProTier,
+          // Automação
+          bpmnBuilder: !isStarterTier,
+          campaigns: isGrowthTier || isProTier,
+          multiChannelCampaigns: isProTier,
+          // IA
+          aiAgents: true,
+          unlimitedAgents: isProTier,
+          // CRM
+          crmKanban: true,
+          customContactFields: !isStarterTier,
+          // Métricas
+          dashboardBasic: true,
+          dashboardAdvanced: isProTier,
+          // Suporte
+          prioritySupport: isProTier,
+        },
+      },
+    };
+  }
 }

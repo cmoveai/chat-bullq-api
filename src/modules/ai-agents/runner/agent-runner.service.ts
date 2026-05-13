@@ -19,6 +19,7 @@ import { PromptBuilderService } from './prompt-builder.service';
 import { CatalogSyncService } from './catalog-sync.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { UsageService } from '../../billing/usage.service';
+import { LimitEnforcerService } from '../../billing/limit-enforcer.service';
 import { isToolCallFailure } from '../agents/agents.service';
 
 const MAX_TOOL_ITERATIONS = 8;
@@ -51,6 +52,7 @@ export class AiAgentRunnerService {
     private readonly catalogSync: CatalogSyncService,
     private readonly notifications: NotificationsService,
     private readonly usage: UsageService,
+    private readonly limitEnforcer: LimitEnforcerService,
   ) {}
 
   async run({
@@ -95,6 +97,11 @@ export class AiAgentRunnerService {
         // Skill getProductPitch(slug) fetches full details on demand.
         this.catalogSync.getCompactCatalog(conversation.organizationId),
       ]);
+
+    // Bloqueia run novo se org estourou orçamento mensal LLM.
+    // Lança ForbiddenException com code PLAN_LLM_BUDGET_REACHED · fica visível
+    // no log e pode ser tratado pelo caller pra notificar admin.
+    await this.limitEnforcer.assertWithinCreditBudget(conversation.organizationId);
 
     const run = await this.prisma.aiAgentRun.create({
       data: {
@@ -464,6 +471,13 @@ export class AiAgentRunnerService {
           error: errorMessage,
           durationMs: Date.now() - startedAt,
         },
+      });
+
+      this.usage.record(ctx.organizationId, 'tool_call', {
+        runId: ctx.runId,
+        toolName: call.name,
+        durationMs: Date.now() - startedAt,
+        failed: !!errorMessage || isToolCallFailure({ error: errorMessage ?? null, output }),
       });
 
       // Surface silent failures: notify the org's humans whenever a tool
