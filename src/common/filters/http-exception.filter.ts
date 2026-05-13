@@ -32,6 +32,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         ? exceptionResponse
         : (exceptionResponse as Record<string, unknown>).message || 'Internal server error';
 
+    // Quando a exception é lançada com objeto (`throw new ForbiddenException({code, kind, ...})`),
+    // preserva os campos extras no payload final · permite tratamento estruturado no front.
+    // Campos `message` e `statusCode` são sobrescritos pelos canônicos abaixo.
+    const extras: Record<string, unknown> = {};
+    if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
+      for (const [k, v] of Object.entries(exceptionResponse as Record<string, unknown>)) {
+        if (k === 'message' || k === 'statusCode' || k === 'error') continue;
+        extras[k] = v;
+      }
+    }
+
     if (status >= 500) {
       this.logger.error(
         `${request.method} ${request.url} ${status}`,
@@ -48,6 +59,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           : 'InternalServerError',
       timestamp: new Date().toISOString(),
       path: request.url,
+      ...extras,
     });
   }
 }
