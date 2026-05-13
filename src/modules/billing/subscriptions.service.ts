@@ -66,7 +66,14 @@ export class SubscriptionsService {
    */
   async getAccountStatus(organizationId: string): Promise<{
     suspended: boolean;
-    reason: 'trial_expired' | 'past_due' | 'canceled' | 'expired' | 'no_subscription' | null;
+    reason:
+      | 'trial_pending_payment'
+      | 'trial_expired'
+      | 'past_due'
+      | 'canceled'
+      | 'expired'
+      | 'no_subscription'
+      | null;
     status: SubscriptionStatus | null;
     trialEndsAt: Date | null;
     planCode: string | null;
@@ -84,26 +91,20 @@ export class SubscriptionsService {
       };
     }
 
-    const now = Date.now();
-    const trialExpired =
-      sub.status === SubscriptionStatus.TRIAL &&
-      sub.trialEndsAt &&
-      sub.trialEndsAt.getTime() < now;
+    // Regra firme: SÓ subscription ACTIVE libera acesso. Trial sem pagamento
+    // confirmado conta como suspended (cliente precisa pagar via cartão ou Pix
+    // pra usar a plataforma). Trial existe só como contagem regressiva pra cobrar.
+    let suspended = sub.status !== SubscriptionStatus.ACTIVE;
+    let reason: 'trial_pending_payment' | 'trial_expired' | 'past_due' | 'canceled' | 'expired' | null = null;
 
-    let suspended = false;
-    let reason: 'trial_expired' | 'past_due' | 'canceled' | 'expired' | null = null;
-
-    if (trialExpired) {
-      suspended = true;
-      reason = 'trial_expired';
+    if (sub.status === SubscriptionStatus.TRIAL) {
+      const trialExpired = sub.trialEndsAt && sub.trialEndsAt.getTime() < Date.now();
+      reason = trialExpired ? 'trial_expired' : 'trial_pending_payment';
     } else if (sub.status === SubscriptionStatus.PAST_DUE) {
-      suspended = true;
       reason = 'past_due';
     } else if (sub.status === SubscriptionStatus.CANCELED) {
-      suspended = true;
       reason = 'canceled';
     } else if (sub.status === SubscriptionStatus.EXPIRED) {
-      suspended = true;
       reason = 'expired';
     }
 
