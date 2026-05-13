@@ -18,6 +18,7 @@ import { SqlToolExecutorService } from '../tools/sql-tool-executor.service';
 import { PromptBuilderService } from './prompt-builder.service';
 import { CatalogSyncService } from './catalog-sync.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { UsageService } from '../../billing/usage.service';
 import { isToolCallFailure } from '../agents/agents.service';
 
 const MAX_TOOL_ITERATIONS = 8;
@@ -49,6 +50,7 @@ export class AiAgentRunnerService {
     private readonly sqlExecutor: SqlToolExecutorService,
     private readonly catalogSync: CatalogSyncService,
     private readonly notifications: NotificationsService,
+    private readonly usage: UsageService,
   ) {}
 
   async run({
@@ -273,6 +275,15 @@ export class AiAgentRunnerService {
           cacheWriteTokens: aggregateUsage.cacheWriteTokens,
           costUsd: aggregateUsage.costUsd,
         },
+      });
+
+      this.usage.record(conversation.organizationId, 'agent_run', {
+        runId: run.id,
+        agentId: agent.id,
+        inputTokens: aggregateUsage.inputTokens,
+        outputTokens: aggregateUsage.outputTokens,
+        costUsd: aggregateUsage.costUsd,
+        iterations: iterationCount,
       });
 
       // Auto-chain: if this run delegated to a worker, immediately fire the
