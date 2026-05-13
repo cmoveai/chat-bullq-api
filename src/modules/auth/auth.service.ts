@@ -72,6 +72,9 @@ export class AuthService {
           name: dto.name,
           email: dto.email,
           password: hashedPassword,
+          phone: dto.phone,
+          cpfCnpj: dto.cpfCnpj,
+          companySize: dto.companySize,
         },
       });
 
@@ -177,6 +180,9 @@ export class AuthService {
           name: dto.name,
           email: dto.email,
           password: hashedPassword,
+          phone: dto.phone,
+          cpfCnpj: dto.cpfCnpj,
+          companySize: dto.companySize,
         },
       });
 

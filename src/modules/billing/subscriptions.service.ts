@@ -2,8 +2,8 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
-const TRIAL_DAYS = 7;
-const DEFAULT_TRIAL_PLAN = 'SOLO';
+const TRIAL_DAYS = 30;
+const DEFAULT_TRIAL_PLAN = 'STARTER';
 
 @Injectable()
 export class SubscriptionsService {
@@ -57,5 +57,62 @@ export class SubscriptionsService {
       const sub = await this.createTrialForOrg(organizationId);
       return this.findByOrg(sub.organizationId);
     }
+  }
+
+  /**
+   * Status simplificado da conta · usado pelo banner do dashboard e guard de rotas.
+   * - active: pagou ou trial válido
+   * - suspended: trial vencido ou status PAST_DUE/CANCELED/EXPIRED
+   */
+  async getAccountStatus(organizationId: string): Promise<{
+    suspended: boolean;
+    reason: 'trial_expired' | 'past_due' | 'canceled' | 'expired' | 'no_subscription' | null;
+    status: SubscriptionStatus | null;
+    trialEndsAt: Date | null;
+    planCode: string | null;
+  }> {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { organizationId },
+    });
+    if (!sub) {
+      return {
+        suspended: true,
+        reason: 'no_subscription',
+        status: null,
+        trialEndsAt: null,
+        planCode: null,
+      };
+    }
+
+    const now = Date.now();
+    const trialExpired =
+      sub.status === SubscriptionStatus.TRIAL &&
+      sub.trialEndsAt &&
+      sub.trialEndsAt.getTime() < now;
+
+    let suspended = false;
+    let reason: 'trial_expired' | 'past_due' | 'canceled' | 'expired' | null = null;
+
+    if (trialExpired) {
+      suspended = true;
+      reason = 'trial_expired';
+    } else if (sub.status === SubscriptionStatus.PAST_DUE) {
+      suspended = true;
+      reason = 'past_due';
+    } else if (sub.status === SubscriptionStatus.CANCELED) {
+      suspended = true;
+      reason = 'canceled';
+    } else if (sub.status === SubscriptionStatus.EXPIRED) {
+      suspended = true;
+      reason = 'expired';
+    }
+
+    return {
+      suspended,
+      reason,
+      status: sub.status,
+      trialEndsAt: sub.trialEndsAt,
+      planCode: sub.planCode,
+    };
   }
 }

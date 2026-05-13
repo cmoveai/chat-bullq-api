@@ -1,4 +1,4 @@
-import { AiAgentKind } from '@prisma/client';
+import { AgentLeadQualificationTrigger, AiAgentKind } from '@prisma/client';
 import {
   IsArray,
   IsBoolean,
@@ -117,4 +117,68 @@ export class CreateAgentDto {
   @IsString()
   @MaxLength(60)
   squad?: string;
+
+  // ─── Lead capture & qualification (TOP 4 · AutomateFlow parity) ──────
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  collectContactData?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['name', 'phone', 'email'],
+    description:
+      'Quais standard fields o agent tenta coletar (name/phone/email)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  collectStandardFields?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'IDs de campos customizados (Organization.settings.customContactFields) que o agent coleta',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  collectCustomFieldIds?: string[];
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  leadQualificationEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Model id usado pra qualificação (null = usa o do próprio agente)',
+  })
+  @IsOptional()
+  @IsString()
+  leadQualificationModelId?: string;
+
+  @ApiPropertyOptional({
+    enum: AgentLeadQualificationTrigger,
+    default: AgentLeadQualificationTrigger.WHEN_CONVERSATION_ENDS,
+  })
+  @IsOptional()
+  @IsEnum(AgentLeadQualificationTrigger)
+  leadQualificationTrigger?: AgentLeadQualificationTrigger;
+
+  @ApiPropertyOptional({ default: 5, minimum: 1, maximum: 50 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  leadQualificationMessageCount?: number;
+
+  @ApiPropertyOptional({
+    description: 'Prompt custom de qualificação (null = usa default)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  leadQualificationPrompt?: string;
 }

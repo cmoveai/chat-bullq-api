@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
+import { OtpService } from './otp.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -17,6 +18,7 @@ import { EmailService } from '../email/email.service';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly otp: OtpService,
     private readonly audit: AuditService,
     private readonly email: EmailService,
   ) {}
@@ -95,6 +97,48 @@ export class AuthController {
   @ApiOperation({ summary: 'Resend email verification link' })
   async resendVerification(@Body() body: { email: string }) {
     await this.authService.resendVerification(body.email);
+    return { ok: true };
+  }
+
+  // ====================
+  // OTP · WhatsApp e Email (signup flow ZapResponder-style)
+  // ====================
+
+  @Post('send-otp')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Envia código OTP de 6 dígitos via WhatsApp ou Email' })
+  async sendOtp(
+    @CurrentUser() user: { id: string },
+    @Body() body: { type: 'phone' | 'email' },
+    @Req() req: Request,
+  ) {
+    const result = await this.otp.sendOtp(user.id, body.type);
+    await this.audit.log({
+      action: `auth.otp_sent_${body.type}`,
+      userId: user.id,
+      req,
+    });
+    return result;
+  }
+
+  @Post('verify-otp')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Valida código OTP recebido via WhatsApp ou Email' })
+  async verifyOtp(
+    @CurrentUser() user: { id: string },
+    @Body() body: { type: 'phone' | 'email'; code: string },
+    @Req() req: Request,
+  ) {
+    await this.otp.verifyOtp(user.id, body.code, body.type);
+    await this.audit.log({
+      action: `auth.otp_verified_${body.type}`,
+      userId: user.id,
+      req,
+    });
     return { ok: true };
   }
 

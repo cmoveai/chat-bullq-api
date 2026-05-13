@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import type { SignOptions } from 'jsonwebtoken';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { OtpService } from './otp.service';
 import { JwtStrategy } from './jwt.strategy';
 import { ApiKeyStrategy } from './api-key.strategy';
 import { SupabaseJwtStrategy } from './supabase-jwt.strategy';
@@ -32,6 +33,7 @@ import { ApiKeysModule } from '../api-keys/api-keys.module';
   controllers: [AuthController, LgpdController],
   providers: [
     AuthService,
+    OtpService,
     JwtStrategy,
     ApiKeyStrategy,
     SupabaseJwtStrategy,

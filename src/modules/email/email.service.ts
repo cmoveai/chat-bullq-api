@@ -72,6 +72,39 @@ export class EmailService {
     }
   }
 
+  async sendOtpCode(to: string, name: string, code: string, ttlMin: number): Promise<void> {
+    const subject = `CMOVE.AI-ZAP · Código de verificação: ${code}`;
+    const html = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #fafafa;">
+        <h2 style="color: #0a0a0a; font-size: 20px; margin-bottom: 8px;">Olá, ${name}</h2>
+        <p style="color: #525252; font-size: 14px; margin: 0 0 24px;">
+          Use o código abaixo pra verificar seu e-mail no CMOVE.AI-ZAP:
+        </p>
+        <div style="background: #fff; border-radius: 12px; padding: 24px; text-align: center; border: 1px solid #e5e5e5;">
+          <div style="font-family: ui-monospace, SF Mono, monospace; font-size: 36px; font-weight: 700; letter-spacing: 8px; color: #0a0a0a;">
+            ${code}
+          </div>
+        </div>
+        <p style="color: #737373; font-size: 12px; margin-top: 24px;">
+          Esse código expira em ${ttlMin} minutos. Não compartilhe com ninguém.
+        </p>
+        <p style="color: #a3a3a3; font-size: 11px; margin-top: 32px; text-align: center;">
+          CMOVE.AI · Plataforma de automatização e agentes IA
+        </p>
+      </div>`;
+    const text = `Seu código CMOVE.AI-ZAP: ${code} · expira em ${ttlMin} minutos.`;
+    if (!this.resend) {
+      this.logger.log(`[DRY-RUN] otp-email → ${to} · code ${code}`);
+      return;
+    }
+    try {
+      const result = await this.resend.emails.send({ from: this.from, to, subject, html, text });
+      this.logger.log(`OTP email sent to ${to} · resend id ${result.data?.id ?? 'n/a'}`);
+    } catch (err: any) {
+      this.logger.error(`Failed to send OTP email to ${to}: ${err.message}`);
+    }
+  }
+
   async sendResetPasswordEmail(to: string, name: string, token: string): Promise<void> {
     const { subject, html, text } = renderResetPasswordEmail({ name, appUrl: this.appUrl, token });
     if (!this.resend) {

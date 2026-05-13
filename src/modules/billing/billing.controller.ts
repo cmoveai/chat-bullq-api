@@ -30,6 +30,14 @@ export class BillingController {
     return { data: sub };
   }
 
+  @Get('me/status')
+  @UseGuards(JwtAuthGuard, OrgGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Account status · suspended/active + reason' })
+  async getStatus(@CurrentOrg('id') orgId: string) {
+    return await this.subscriptions.getAccountStatus(orgId);
+  }
+
   @Get('usage')
   @UseGuards(JwtAuthGuard, OrgGuard)
   @ApiBearerAuth()
