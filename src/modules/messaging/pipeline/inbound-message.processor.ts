@@ -12,6 +12,7 @@ import { ZappfyContactEnricherService } from '../../channel-hub/adapters/zappfy/
 import { WebhookEventsService } from '../../channel-hub/webhook-events.service';
 import { AgentRouterService } from '../../ai-agents/router/agent-router.service';
 import { AiAgentRunnerService } from '../../ai-agents/runner/agent-runner.service';
+import { BpmnEngine } from '../../automations/bpmn-engine.service';
 import { TranscriptionService } from '../messages/transcription.service';
 import {
   ChannelType,
@@ -79,6 +80,7 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly agentRouter: AgentRouterService,
     private readonly agentRunner: AiAgentRunnerService,
     private readonly transcription: TranscriptionService,
+    private readonly bpmnEngine: BpmnEngine,
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
   ) {
     super();
@@ -175,6 +177,30 @@ export class InboundMessageProcessor extends WorkerHost {
         where: { id: conversationId },
         data: { lastMessageAt: new Date() },
       });
+
+      // BPMN flows · WhatsApp inbound (não-echo) dispara trigger WA_MESSAGE.
+      // Best-effort · não bloqueia pipeline mesmo se falhar.
+      if (!isEcho && message.channelType !== ChannelType.INSTAGRAM) {
+        const textContent =
+          (message as any).text ??
+          (message as any).body ??
+          (message as any).content ??
+          '';
+        this.bpmnEngine
+          .handleTrigger({
+            type: 'WA_MESSAGE',
+            channelId,
+            organizationId,
+            contactId,
+            externalEventId: message.externalMessageId,
+            text: typeof textContent === 'string' ? textContent : String(textContent ?? ''),
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `BpmnEngine WA_MESSAGE failed for ${message.externalMessageId}: ${err.message}`,
+            ),
+          );
+      }
 
       this.realtimeGateway.emitToChannel(channelId, 'message:new', {
         message: savedMessage,

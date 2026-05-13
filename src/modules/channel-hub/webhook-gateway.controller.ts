@@ -18,6 +18,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Public } from '../../common/decorators';
 import { AutomationEngine } from '../automations/automation-engine.service';
+import { BpmnEngine } from '../automations/bpmn-engine.service';
 import { ChannelAdapterRegistry } from './channel-adapter.registry';
 import { ChannelsService } from './channels/channels.service';
 import { WebhookEventsService } from './webhook-events.service';
@@ -34,6 +35,7 @@ export class WebhookGatewayController {
     private readonly channelsService: ChannelsService,
     private readonly webhookEvents: WebhookEventsService,
     private readonly automationEngine: AutomationEngine,
+    private readonly bpmnEngine: BpmnEngine,
     @InjectQueue('inbound-messages') private readonly inboundQueue: Queue,
   ) {}
 
@@ -157,9 +159,27 @@ export class WebhookGatewayController {
         );
       }
 
-      // IG comments → automation engine (inline, best-effort).
+      // IG comments → automation engines (inline, best-effort).
       // Webhook deve responder 200 mesmo se a automação falhar.
+      // Roda BPMN primeiro (config.nodes) e legacy depois (INSTAGRAM_DM_FROM_COMMENT)
+      // · cada um filtra suas próprias automations · não conflita.
       for (const comment of parseResult.comments ?? []) {
+        this.bpmnEngine
+          .handleTrigger({
+            type: 'IG_COMMENT',
+            channelId: channel.id,
+            organizationId: channel.organizationId,
+            externalEventId: comment.externalCommentId,
+            externalCommentId: comment.externalCommentId,
+            text: comment.text ?? '',
+            postId: (comment as any).postId,
+            username: comment.contactUsername ?? '',
+          })
+          .catch((err) =>
+            this.logger.error(
+              `BpmnEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
+            ),
+          );
         this.automationEngine
           .handleInstagramComment(channel.id, comment)
           .catch((err) =>
