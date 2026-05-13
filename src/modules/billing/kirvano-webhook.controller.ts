@@ -17,7 +17,7 @@ import { PrismaService } from '../../database/prisma.service';
  * Assinatura HMAC validada via header `x-kirvano-signature` + KIRVANO_WEBHOOK_SECRET.
  */
 @ApiTags('Webhooks')
-@Controller('webhooks/kirvano')
+@Controller('billing/webhooks/kirvano')
 export class KirvanoWebhookController {
   private readonly logger = new Logger(KirvanoWebhookController.name);
   private readonly webhookSecret?: string;
