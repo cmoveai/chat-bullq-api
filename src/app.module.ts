@@ -32,6 +32,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { EmailModule } from './modules/email/email.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { SuperAdminModule } from './modules/super-admin/super-admin.module';
+import { SecurityModule } from './modules/security/security.module';
 // ProductsModule removido — catálogo agora vive no Trivapp e é consumido
 // via skill HTTP getProductPitch + CatalogSyncService. Tabela `products`
 // fica órfã no DB (cleanup futuro). Não importar aqui.
@@ -87,6 +88,7 @@ import redisConfig from './config/redis.config';
     EmailModule,
     BillingModule,
     SuperAdminModule,
+    SecurityModule,
   ],
   providers: [
     // Throttler global · aplica em TUDO. Endpoints públicos podem
