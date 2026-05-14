@@ -50,7 +50,10 @@ async function bootstrap() {
           frameAncestors: ["'none'"],
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
+          // Cyber Onda 2 · #33 · CSP violations → /api/v1/csp-report
+          reportUri: ['/api/v1/csp-report'],
         },
+        reportOnly: false,
       },
       // HSTS: força HTTPS por 1 ano · só em prod (atrapalha localhost)
       hsts: isProd
