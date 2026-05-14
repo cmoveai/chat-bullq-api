@@ -36,6 +36,30 @@ export class EmailService {
     }
   }
 
+  /**
+   * Envio genérico · usado por security alerts (anomaly detection) e
+   * outros canais internos que não precisam de template formal.
+   * Best-effort · não throw.
+   */
+  async sendRaw(opts: { to: string; subject: string; html: string; text?: string }): Promise<void> {
+    if (!this.resend) {
+      this.logger.log(`[DRY-RUN] raw → ${opts.to} · subject="${opts.subject}"`);
+      return;
+    }
+    try {
+      const result = await this.resend.emails.send({
+        from: this.from,
+        to: opts.to,
+        subject: opts.subject,
+        html: opts.html,
+        text: opts.text ?? opts.html.replace(/<[^>]+>/g, ''),
+      });
+      this.logger.log(`Raw email sent to ${opts.to} · resend id ${result.data?.id ?? 'n/a'}`);
+    } catch (err: any) {
+      this.logger.error(`Failed sendRaw to ${opts.to}: ${err.message}`);
+    }
+  }
+
   async sendWelcomeEmail(to: string, name: string): Promise<void> {
     const { subject, html, text } = renderWelcomeEmail({ name, appUrl: this.appUrl });
 
