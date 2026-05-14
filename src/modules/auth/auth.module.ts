@@ -18,6 +18,7 @@ import { TwoFactorController } from './two-factor.controller';
 import { TwoFactorService } from './two-factor.service';
 import { ApiKeysModule } from '../api-keys/api-keys.module';
 import { AuditModule } from '../audit/audit.module';
+import { SecurityModule } from '../security/security.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { AuditModule } from '../audit/audit.module';
     }),
     ApiKeysModule,
     AuditModule,
+    SecurityModule,
   ],
   controllers: [AuthController, LgpdController, TwoFactorController],
   providers: [

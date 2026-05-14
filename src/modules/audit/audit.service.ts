@@ -39,7 +39,10 @@ export type AuditAction =
   | 'apikey.created'
   | 'apikey.revoked'
   | 'super_admin.access'
-  | 'super_admin.access_denied';
+  | 'super_admin.access_denied'
+  | 'auth.2fa_enabled'
+  | 'auth.2fa_disabled'
+  | 'auth.anomaly_detected';
 
 @Injectable()
 export class AuditService {

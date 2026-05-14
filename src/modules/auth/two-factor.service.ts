@@ -128,9 +128,9 @@ export class TwoFactorService {
     });
 
     await this.audit.log({
-      action: 'user.password_changed', // reusa · TODO adicionar action 2fa específica
+      action: 'auth.2fa_enabled',
       userId,
-      metadata: { event: '2fa.enabled', ip: ip ?? null },
+      metadata: { ip: ip ?? null },
     });
 
     return { backupCodes };
@@ -184,9 +184,9 @@ export class TwoFactorService {
     });
 
     await this.audit.log({
-      action: 'user.password_changed',
+      action: 'auth.2fa_disabled',
       userId,
-      metadata: { event: '2fa.disabled', ip: ip ?? null },
+      metadata: { ip: ip ?? null },
     });
   }
 

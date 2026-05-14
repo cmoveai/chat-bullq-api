@@ -12,6 +12,7 @@ import { CurrentUser } from '../../common/decorators';
 
 import { AuditService } from '../audit/audit.service';
 import { EmailService } from '../email/email.service';
+import { AnomalyDetectorService } from '../security/anomaly-detector.service';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -21,6 +22,7 @@ export class AuthController {
     private readonly otp: OtpService,
     private readonly audit: AuditService,
     private readonly email: EmailService,
+    private readonly anomaly: AnomalyDetectorService,
   ) {}
 
   // Cyber Onda 1 · brute-force protection · 5 tentativas/min/IP
@@ -60,9 +62,22 @@ export class AuthController {
       await this.audit.log({
         action: 'auth.login_success',
         userId,
-        metadata: { email: dto.email },
+        metadata: { email: dto.email, country },
         req,
       });
+
+      // Cyber Onda 2 · #24 · análise pós-login (fire-and-forget)
+      this.anomaly
+        .analyze({
+          userId,
+          email: String(result.user.email),
+          name: String(result.user.name),
+          ip,
+          country,
+          userAgent: typeof userAgent === 'string' ? userAgent : null,
+        })
+        .catch(() => undefined);
+
       return result;
     } catch (err) {
       // 423 Locked é gerado pelo lockout · loga separado
