@@ -127,6 +127,11 @@ model User {
   otpType         String?   @map("otp_type")
   otpExpiresAt    DateTime? @map("otp_expires_at")
   otpAttempts     Int       @default(0) @map("otp_attempts")
+  // Cyber Onda 2 · #21 · 2FA TOTP (Google Authenticator/Authy)
+  twoFactorEnabled       Boolean  @default(false) @map("two_factor_enabled")
+  twoFactorSecret        String?  @map("two_factor_secret") // criptografado app-level (TOTP_ENC_KEY)
+  twoFactorBackupCodes   String?  @map("two_factor_backup_codes") // JSON array criptografado
+  twoFactorEnabledAt     DateTime? @map("two_factor_enabled_at")
   globalRole      GlobalRole @default(USER) @map("global_role")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")

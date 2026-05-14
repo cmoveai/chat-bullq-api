@@ -14,7 +14,10 @@ import { PasswordPolicyService } from './password-policy.service';
 import { AuthTokensService } from './auth-tokens.service';
 import { LgpdController } from './lgpd.controller';
 import { LgpdService } from './lgpd.service';
+import { TwoFactorController } from './two-factor.controller';
+import { TwoFactorService } from './two-factor.service';
 import { ApiKeysModule } from '../api-keys/api-keys.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -29,8 +32,9 @@ import { ApiKeysModule } from '../api-keys/api-keys.module';
       }),
     }),
     ApiKeysModule,
+    AuditModule,
   ],
-  controllers: [AuthController, LgpdController],
+  controllers: [AuthController, LgpdController, TwoFactorController],
   providers: [
     AuthService,
     OtpService,
@@ -41,7 +45,8 @@ import { ApiKeysModule } from '../api-keys/api-keys.module';
     PasswordPolicyService,
     AuthTokensService,
     LgpdService,
+    TwoFactorService,
   ],
-  exports: [AuthService, AuthTokensService],
+  exports: [AuthService, AuthTokensService, TwoFactorService],
 })
 export class AuthModule {}

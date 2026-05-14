@@ -462,6 +462,20 @@ export class SuperAdminService {
     };
   }
 
+  /**
+   * Cyber Onda 2 · #23 · cleanup retroativo audit_log (> 12 meses).
+   * PG trigger garante que registros recentes não podem ser deletados.
+   * Esse endpoint apenas dispara o DELETE · trigger valida cada row.
+   */
+  async cleanupAuditLog(): Promise<{ deleted: number; cutoff: string }> {
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 12);
+    const deleted = await this.prisma.auditLog.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    });
+    return { deleted: deleted.count, cutoff: cutoff.toISOString() };
+  }
+
   private async countMessagesToday(): Promise<number> {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
