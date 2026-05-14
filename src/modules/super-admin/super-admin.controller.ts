@@ -102,4 +102,10 @@ export class SuperAdminController {
   financeSnapshot() {
     return this.service.getFinanceSnapshot();
   }
+
+  @Post('audit-log/cleanup')
+  @ApiOperation({ summary: 'Cyber Onda 2 · apaga audit_log > 12 meses · retenção mínima respeitada via PG trigger' })
+  cleanupAuditLog() {
+    return this.service.cleanupAuditLog();
+  }
 }
