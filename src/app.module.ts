@@ -33,6 +33,7 @@ import { EmailModule } from './modules/email/email.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 import { SecurityModule } from './modules/security/security.module';
+import { SentryModule } from '@sentry/nestjs/setup';
 // ProductsModule removido — catálogo agora vive no Trivapp e é consumido
 // via skill HTTP getProductPitch + CatalogSyncService. Tabela `products`
 // fica órfã no DB (cleanup futuro). Não importar aqui.
@@ -40,6 +41,8 @@ import redisConfig from './config/redis.config';
 
 @Module({
   imports: [
+    // Cyber Onda 2 · #26 · Sentry root (auto exception filter)
+    SentryModule.forRoot(),
     ConfigModule.forRoot({ isGlobal: true, load: [redisConfig] }),
     // Cyber Onda 1 · Rate limit global (throttler).
     // 3 buckets: short (rajadas) · medium · long. Endpoints sensíveis
