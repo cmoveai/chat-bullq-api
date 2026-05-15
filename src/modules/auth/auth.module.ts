@@ -16,6 +16,9 @@ import { LgpdController } from './lgpd.controller';
 import { LgpdService } from './lgpd.service';
 import { TwoFactorController } from './two-factor.controller';
 import { TwoFactorService } from './two-factor.service';
+import { GoogleAuthController } from './google.controller';
+import { GoogleAuthService } from './google-auth.service';
+import { GoogleStrategy } from './google.strategy';
 import { ApiKeysModule } from '../api-keys/api-keys.module';
 import { AuditModule } from '../audit/audit.module';
 import { SecurityModule } from '../security/security.module';
@@ -36,7 +39,7 @@ import { SecurityModule } from '../security/security.module';
     AuditModule,
     SecurityModule,
   ],
-  controllers: [AuthController, LgpdController, TwoFactorController],
+  controllers: [AuthController, LgpdController, TwoFactorController, GoogleAuthController],
   providers: [
     AuthService,
     OtpService,
@@ -48,6 +51,8 @@ import { SecurityModule } from '../security/security.module';
     AuthTokensService,
     LgpdService,
     TwoFactorService,
+    GoogleAuthService,
+    GoogleStrategy,
   ],
   exports: [AuthService, AuthTokensService, TwoFactorService],
 })
