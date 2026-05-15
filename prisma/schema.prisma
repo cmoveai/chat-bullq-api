@@ -132,6 +132,8 @@ model User {
   twoFactorSecret        String?  @map("two_factor_secret") // criptografado app-level (TOTP_ENC_KEY)
   twoFactorBackupCodes   String?  @map("two_factor_backup_codes") // JSON array criptografado
   twoFactorEnabledAt     DateTime? @map("two_factor_enabled_at")
+  // Cyber Onda 2 · #22 · SSO Google
+  googleId               String?  @unique @map("google_id")
   globalRole      GlobalRole @default(USER) @map("global_role")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
