@@ -80,31 +80,29 @@ export class BillingController {
     const isProTier = code === 'PRO' || code === 'NEGOCIO' || code === 'EMPRESA';
 
     return {
-      data: {
-        planCode: code,
-        planName: sub.plan.name,
-        features: {
-          // Comunicação
-          whatsappChannels: true,
-          instagramChannels: !isStarterTier,
-          emailSend: isGrowthTier || isProTier,
-          emailReceive: isProTier,
-          // Automação
-          bpmnBuilder: !isStarterTier,
-          campaigns: isGrowthTier || isProTier,
-          multiChannelCampaigns: isProTier,
-          // IA
-          aiAgents: true,
-          unlimitedAgents: isProTier,
-          // CRM
-          crmKanban: true,
-          customContactFields: !isStarterTier,
-          // Métricas
-          dashboardBasic: true,
-          dashboardAdvanced: isProTier,
-          // Suporte
-          prioritySupport: isProTier,
-        },
+      planCode: code,
+      planName: sub.plan.name,
+      features: {
+        // Comunicação
+        whatsappChannels: true,
+        instagramChannels: !isStarterTier,
+        emailSend: isGrowthTier || isProTier,
+        emailReceive: isProTier,
+        // Automação
+        bpmnBuilder: !isStarterTier,
+        campaigns: isGrowthTier || isProTier,
+        multiChannelCampaigns: isProTier,
+        // IA
+        aiAgents: true,
+        unlimitedAgents: isProTier,
+        // CRM
+        crmKanban: true,
+        customContactFields: !isStarterTier,
+        // Métricas
+        dashboardBasic: true,
+        dashboardAdvanced: isProTier,
+        // Suporte
+        prioritySupport: isProTier,
       },
     };
   }
