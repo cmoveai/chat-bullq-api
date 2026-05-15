@@ -1,3 +1,6 @@
+// ─── Cyber Onda 2 · #26 · Sentry init ANTES de qualquer import Nest ───
+import './instrument';
+
 // ─── Polyfill WebSocket pra Node 20 (supabase-js precisa) ───────────
 // Tem que vir ANTES de qualquer import do Nest pra rodar antes do construtor
 // do SupabaseJwtStrategy ser chamado (que faz createClient).
