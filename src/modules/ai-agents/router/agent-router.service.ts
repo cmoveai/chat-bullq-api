@@ -33,24 +33,52 @@ export class AgentRouterService {
     handle: boolean;
     reason?: string;
   }> {
-    // Human takeover gate: se a conversa NÃO está em modo bot, IA cala.
+    // Human takeover gate · com auto-revert por inatividade.
     //   BOT      → IA atua (default no inbound novo)
     //   PENDING  → IA atua (vai virar BOT no primeiro inbound)
-    //   OPEN     → humano respondeu/assumiu · IA cala até alguém devolver
-    //   WAITING  → aguardando humano · IA cala
-    //   CLOSED   → atendimento encerrado · IA cala
-    // Esse gate é decisivo · independe de qualquer override aiEnabled abaixo,
-    // porque quando humano está na conversa, o bot NÃO PODE entrar no meio
-    // (regra de produto, não config).
+    //   OPEN     → humano respondeu/assumiu · IA cala SE humano tá ativo (~2h)
+    //   WAITING  → aguardando humano · IA cala sempre
+    //   CLOSED   → atendimento encerrado · IA cala sempre
+    //
+    // O OPEN sem atividade humana há mais de TAKEOVER_TIMEOUT_HOURS volta
+    // automaticamente pra BOT — evita conversas ficarem "presas" pra sempre
+    // porque o humano respondeu uma vez e nunca mais voltou.
+    const TAKEOVER_TIMEOUT_HOURS = 2;
     if (
-      conversation.status === ConversationStatus.OPEN ||
       conversation.status === ConversationStatus.WAITING ||
       conversation.status === ConversationStatus.CLOSED
     ) {
       return {
         handle: false,
-        reason: `conversation.status=${conversation.status} (humano assumiu ou conversa encerrada)`,
+        reason: `conversation.status=${conversation.status}`,
       };
+    }
+    if (conversation.status === ConversationStatus.OPEN) {
+      const cutoff = new Date(
+        Date.now() - TAKEOVER_TIMEOUT_HOURS * 60 * 60 * 1000,
+      );
+      const recentOutbound = await this.prisma.message.findFirst({
+        where: {
+          conversationId: conversation.id,
+          direction: 'OUTBOUND',
+          createdAt: { gte: cutoff },
+        },
+        select: { id: true },
+      });
+      if (recentOutbound) {
+        return {
+          handle: false,
+          reason: `conversation.status=OPEN com resposta humana nas últimas ${TAKEOVER_TIMEOUT_HOURS}h`,
+        };
+      }
+      // Sem resposta humana recente → IA reassume · devolve conversa pra BOT.
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { status: ConversationStatus.BOT },
+      });
+      this.logger.log(
+        `Auto-revert OPEN → BOT · conv=${conversation.id} (sem outbound humano há ${TAKEOVER_TIMEOUT_HOURS}h+)`,
+      );
     }
 
     // Hierarquia de override (mais específico ganha):
