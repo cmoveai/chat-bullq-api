@@ -200,6 +200,30 @@ export class InboundMessageProcessor extends WorkerHost {
         data: { lastMessageAt: new Date() },
       });
 
+      // Human takeover: se a mensagem é ECHO (Cris respondeu pelo celular
+      // OU pelo painel), o humano assumiu essa conversa. Mover BOT/PENDING
+      // pra OPEN pra que o AgentRouter pare de disparar IA aqui.
+      // Também cancela qualquer timer pendente de agente pra essa conversa
+      // (evita IA disparar uma resposta com debounce no meio da fala humana).
+      if (
+        isEcho &&
+        (status === ConversationStatus.BOT ||
+          status === ConversationStatus.PENDING)
+      ) {
+        await this.prisma.conversation.update({
+          where: { id: conversationId },
+          data: { status: ConversationStatus.OPEN },
+        });
+        const pendingTimer = this.pendingRuns.get(conversationId);
+        if (pendingTimer) {
+          clearTimeout(pendingTimer);
+          this.pendingRuns.delete(conversationId);
+        }
+        this.logger.log(
+          `Human takeover · conv=${conversationId} status=${status}→OPEN · IA pausada nesta conversa`,
+        );
+      }
+
       // BPMN flows · WhatsApp inbound (não-echo) dispara trigger WA_MESSAGE.
       // Best-effort · não bloqueia pipeline mesmo se falhar.
       if (!isEcho && message.channelType !== ChannelType.INSTAGRAM) {

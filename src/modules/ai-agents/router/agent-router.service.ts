@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Conversation, Organization } from '@prisma/client';
+import { Conversation, ConversationStatus, Organization } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 
 interface BusinessHoursDay {
@@ -33,6 +33,26 @@ export class AgentRouterService {
     handle: boolean;
     reason?: string;
   }> {
+    // Human takeover gate: se a conversa NÃO está em modo bot, IA cala.
+    //   BOT      → IA atua (default no inbound novo)
+    //   PENDING  → IA atua (vai virar BOT no primeiro inbound)
+    //   OPEN     → humano respondeu/assumiu · IA cala até alguém devolver
+    //   WAITING  → aguardando humano · IA cala
+    //   CLOSED   → atendimento encerrado · IA cala
+    // Esse gate é decisivo · independe de qualquer override aiEnabled abaixo,
+    // porque quando humano está na conversa, o bot NÃO PODE entrar no meio
+    // (regra de produto, não config).
+    if (
+      conversation.status === ConversationStatus.OPEN ||
+      conversation.status === ConversationStatus.WAITING ||
+      conversation.status === ConversationStatus.CLOSED
+    ) {
+      return {
+        handle: false,
+        reason: `conversation.status=${conversation.status} (humano assumiu ou conversa encerrada)`,
+      };
+    }
+
     // Hierarquia de override (mais específico ganha):
     //   conv.aiEnabled (true/false) — força resposta da conversa específica
     //   channel.aiEnabled (true/false) — força no canal inteiro
