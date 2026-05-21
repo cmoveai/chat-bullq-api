@@ -1,40 +1,42 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Channel, ChannelType, MessageDirection } from '@prisma/client';
+import { Channel, ChannelType } from '@prisma/client';
 import { HistorySyncPort } from '../../ports/history-sync.port';
 import {
   FetchConversationsResult,
   FetchMessagesResult,
   HistorySyncFilters,
   NormalizedHistoricalConversation,
-  NormalizedHistoricalMessage,
   SyncCapabilities,
 } from '../../ports/types';
 import { ZapiHttpClient } from './zapi.http-client';
-import { ZapiMessageMapper } from './zapi.message-mapper';
 
 /**
- * Z-API history sync. Z-API exposes:
- *   GET /chats?page=N&pageSize=M
- *   GET /chat-messages/{phone}?page=N&pageSize=M
+ * Z-API history sync · Multi Device.
  *
- * Both are paginated by integer page number. We mirror webhook normalization
- * by feeding fetched messages back through the same mapper used by the
- * inbound path.
+ * Z-API Multi Device only exposes the conversation list (`GET /chats`).
+ * Per-chat message history endpoints (`/chat-messages`, `/messages`, etc.)
+ * are not implemented in Multi Device — they all return 400 or NOT_FOUND.
+ * So fetchMessages is intentionally a no-op; message bodies arrive
+ * exclusively through the real-time webhook.
  */
 @Injectable()
 export class ZapiSyncAdapter implements HistorySyncPort {
   readonly channelType = ChannelType.WHATSAPP_ZAPI;
   private readonly logger = new Logger(ZapiSyncAdapter.name);
 
-  constructor(
-    private readonly httpClient: ZapiHttpClient,
-    private readonly mapper: ZapiMessageMapper,
-  ) {}
+  constructor(private readonly httpClient: ZapiHttpClient) {}
 
   getSyncCapabilities(): SyncCapabilities {
+    // Z-API Multi Device DOES NOT expose a per-chat message history endpoint
+    // (every variant — /chat-messages, /messages, /messages-by-phone — returns
+    // 400 "Does not work in multi device version" or NOT_FOUND). So we can
+    // only sync the CONVERSATION list (via /chats) — message bodies arrive
+    // exclusively through the real-time webhook. We expose
+    // supportsHistoryImport=true so the orchestrator still runs
+    // fetchConversations, but fetchMessages returns empty.
     return {
       supportsHistoryImport: true,
-      supportsDeltaSync: true,
+      supportsDeltaSync: false,
       defaultLookbackDays: 30,
       maxLookbackDays: 365,
     };
@@ -55,12 +57,21 @@ export class ZapiSyncAdapter implements HistorySyncPort {
 
     const conversations: NormalizedHistoricalConversation[] = [];
     for (const chat of rawChats) {
-      const phone = String(chat.phone || chat.id || '').replace(/\D/g, '');
+      // Z-API /chats payload:
+      //   { phone: "120363419169606564-group", name: "CFP IA - ALUNOS", isGroup: true, ... }
+      //   { phone: "5511999999999",            name: "Joao",            isGroup: false, ... }
+      // Strip the "-group" suffix when present, otherwise keep just digits.
+      const rawPhone = String(chat.phone || chat.id || '');
+      const phone = rawPhone.replace(/-group$/, '').replace(/\D/g, '');
       if (!phone) continue;
 
-      const isGroup = !!chat.isGroup || String(chat.id || '').endsWith('@g.us');
+      const isGroup =
+        !!chat.isGroup ||
+        rawPhone.endsWith('-group') ||
+        rawPhone.endsWith('@g.us');
       const externalId = isGroup ? `${phone}@g.us` : `${phone}@s.whatsapp.net`;
-      const name = chat.name || chat.chatName || phone;
+      // Prefer human-readable group/contact name over the numeric phone fallback.
+      const name = chat.name || chat.chatName || (isGroup ? `Grupo ${phone}` : phone);
       const lastMessageAt = this.parseTs(chat.lastMessageTime || chat.lastMessage?.momment);
 
       if (filters.sinceTimestamp && lastMessageAt && lastMessageAt < filters.sinceTimestamp) {
@@ -88,63 +99,19 @@ export class ZapiSyncAdapter implements HistorySyncPort {
   }
 
   async fetchMessages(
-    channel: Channel,
-    externalConversationId: string,
-    filters: HistorySyncFilters,
-    cursor?: string,
-    limit = 50,
+    _channel: Channel,
+    _externalConversationId: string,
+    _filters: HistorySyncFilters,
+    _cursor?: string,
+    _limit = 50,
   ): Promise<FetchMessagesResult> {
-    const page = cursor ? parseInt(cursor, 10) || 1 : 1;
-    const phone = externalConversationId.replace(/@s\.whatsapp\.net|@g\.us|@c\.us/g, '');
-    const response = await this.httpClient.fetchMessages(
-      channel,
-      phone,
-      page,
-      limit,
-    );
-    const rawMessages: any[] = Array.isArray(response) ? response : response?.messages || [];
-
-    const messages: NormalizedHistoricalMessage[] = [];
-    let reachedLookbackLimit = false;
-
-    for (const raw of rawMessages) {
-      // Feed history payload through the inbound mapper. Z-API history rows
-      // share the field layout with webhook bodies (text/image/audio/etc + phone
-      // + messageId + momment), so this stays consistent.
-      const normalized = this.mapper.normalizeInbound({
-        ...raw,
-        type: 'ReceivedCallback',
-      });
-      if (!normalized) continue;
-
-      if (filters.sinceTimestamp && normalized.timestamp < filters.sinceTimestamp) {
-        reachedLookbackLimit = true;
-        break;
-      }
-
-      const direction = raw.fromMe
-        ? MessageDirection.OUTBOUND
-        : MessageDirection.INBOUND;
-
-      messages.push({
-        externalMessageId: normalized.externalMessageId,
-        externalConversationId,
-        externalContactId: externalConversationId,
-        direction,
-        timestamp: normalized.timestamp,
-        type: normalized.type,
-        content: normalized.content,
-        senderName: normalized.senderName,
-        replyToExternalId: normalized.replyTo?.externalMessageId,
-        rawPayload: raw,
-      });
-    }
-
-    const hasNext = !reachedLookbackLimit && rawMessages.length >= limit;
-    return {
-      messages,
-      nextCursor: hasNext ? String(page + 1) : undefined,
-    };
+    // Z-API Multi Device does not expose per-chat message history.
+    // Every candidate endpoint (/chat-messages, /messages, /get-messages,
+    // /messages-by-phone) returns either 400 "Does not work in multi device
+    // version" or 200 with body {"error":"NOT_FOUND"}. So we no-op here and
+    // rely entirely on the real-time webhook to populate the conversation
+    // history from the moment the channel is connected forward.
+    return { messages: [], nextCursor: undefined };
   }
 
   private parseTs(ts: any): Date | undefined {
