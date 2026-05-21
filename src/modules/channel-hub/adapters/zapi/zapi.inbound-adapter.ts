@@ -79,22 +79,16 @@ export class ZapiInboundAdapter implements InboundChannelPort {
     headers: Record<string, string>,
     _rawBody: Buffer,
     webhookSecret?: string,
-    channel?: Channel,
+    _channel?: Channel,
   ): boolean {
-    // matchesChannel already proved this payload's instanceId belongs to
-    // this channel. If the operator additionally configured a webhookSecret
-    // (or set channel.config.clientToken to Z-API's account security token),
-    // enforce it.
-    const candidate =
-      headers['client-token'] || headers['x-client-token'] || undefined;
-
-    const expectedClientToken = (channel?.config as any)?.clientToken;
-    if (expectedClientToken) {
-      if (!candidate) return false;
-      return this.timingSafeEqualStr(String(expectedClientToken), candidate);
-    }
-
+    // Z-API DOESN'T echo Client-Token back in inbound webhooks — that would
+    // expose the account credential. So we trust matchesChannel (which already
+    // validated the instanceId in the payload belongs to this channel) and
+    // only enforce an additional check if the operator explicitly configured
+    // a `webhookSecret` on the channel, sent via header.
     if (!webhookSecret) return true;
+    const candidate =
+      headers['x-webhook-secret'] || headers['x-webhook-token'] || undefined;
     if (!candidate) return false;
     return this.timingSafeEqualStr(webhookSecret, candidate);
   }
