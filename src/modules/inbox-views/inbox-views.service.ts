@@ -53,7 +53,7 @@ export class InboxViewsService {
       name: 'Pessoal',
       icon: 'MessageCircle',
       color: '#3b82f6',
-      filters: { channelTypes: ['WHATSAPP_ZAPPFY'], kind: 'INDIVIDUAL' },
+      filters: { channelTypes: ['WHATSAPP_ZAPPFY', 'WHATSAPP_ZAPI'], kind: 'INDIVIDUAL' },
     },
     {
       name: 'Archived',

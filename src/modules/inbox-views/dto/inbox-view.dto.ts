@@ -30,7 +30,7 @@ export class InboxViewFiltersDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  @IsIn(['INSTAGRAM', 'WHATSAPP_OFFICIAL', 'WHATSAPP_ZAPPFY'], { each: true })
+  @IsIn(['INSTAGRAM', 'WHATSAPP_OFFICIAL', 'WHATSAPP_ZAPPFY', 'WHATSAPP_ZAPI'], { each: true })
   channelTypes?: string[];
 
   @IsOptional()

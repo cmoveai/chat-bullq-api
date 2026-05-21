@@ -12,6 +12,7 @@ import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { ChannelAdapterRegistry } from '../channel-adapter.registry';
 import { ZappfyHttpClient } from '../adapters/zappfy/zappfy.http-client';
+import { ZapiHttpClient } from '../adapters/zapi/zapi.http-client';
 import { WhatsAppOfficialHttpClient } from '../adapters/whatsapp-official/whatsapp-official.http-client';
 import { InstagramHttpClient } from '../adapters/instagram/instagram.http-client';
 import { ChannelSyncOrchestrator } from '../sync/channel-sync.orchestrator';
@@ -29,6 +30,7 @@ export class ChannelsService {
     private readonly repository: ChannelsRepository,
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly zappfyHttpClient: ZappfyHttpClient,
+    private readonly zapiHttpClient: ZapiHttpClient,
     private readonly waOfficialHttpClient: WhatsAppOfficialHttpClient,
     private readonly instagramHttpClient: InstagramHttpClient,
     private readonly syncOrchestrator: ChannelSyncOrchestrator,
@@ -74,6 +76,14 @@ export class ChannelsService {
     if (dto.type === ChannelType.WHATSAPP_ZAPPFY) {
       this.configureZappfyWebhook(channel.id).catch((err) =>
         this.logger.warn(`Zappfy webhook config failed: ${err.message}`),
+      );
+    }
+
+    // Z-API has separate per-event webhook setters; point them all at our
+    // unified receiver. Same fire-and-forget pattern as Zappfy.
+    if (dto.type === ChannelType.WHATSAPP_ZAPI) {
+      this.configureZapiWebhook(channel.id).catch((err) =>
+        this.logger.warn(`Z-API webhook config failed: ${err.message}`),
       );
     }
 
@@ -154,6 +164,19 @@ export class ChannelsService {
     const webhookUrl = `${appUrl}/api/v1/webhooks/WHATSAPP_ZAPPFY`;
     await this.zappfyHttpClient.configureWebhook(channel, webhookUrl);
     this.logger.log(`Zappfy webhook configured: ${webhookUrl}`);
+  }
+
+  private async configureZapiWebhook(channelId: string): Promise<void> {
+    const channel = await this.repository.findById(channelId);
+    if (!channel) return;
+    const appUrl = process.env.APP_URL;
+    if (!appUrl) {
+      this.logger.warn('APP_URL not set — skipping Z-API webhook setup');
+      return;
+    }
+    const webhookUrl = `${appUrl}/api/v1/webhooks/WHATSAPP_ZAPI`;
+    await this.zapiHttpClient.configureWebhooks(channel, webhookUrl);
+    this.logger.log(`Z-API webhook configured: ${webhookUrl}`);
   }
 
   private async subscribeWaOfficialApp(channelId: string): Promise<void> {
@@ -314,6 +337,18 @@ export class ChannelsService {
           return {
             success: true,
             status: statusStr,
+            data: status,
+          };
+        }
+
+        case ChannelType.WHATSAPP_ZAPI: {
+          const status = await this.zapiHttpClient.getInstanceStatus(channel);
+          // Z-API status shape: { connected: true|false, session: '...',
+          //                       smartphoneConnected: true|false }
+          const isConnected = status?.connected === true;
+          return {
+            success: true,
+            status: isConnected ? 'connected' : 'disconnected',
             data: status,
           };
         }
