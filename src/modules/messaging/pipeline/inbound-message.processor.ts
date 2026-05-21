@@ -305,15 +305,20 @@ export class InboundMessageProcessor extends WorkerHost {
       // bot answers a single audio without bouncing the customer to text.
       if (!isEcho) {
         const dispatch = async () => {
-          if (savedMessage.type === PrismaContentType.AUDIO) {
-            try {
-              await this.transcription.transcribe(savedMessage.id, organizationId);
-            } catch (err: any) {
-              this.logger.warn(
-                `Auto-transcribe failed for ${savedMessage.id}: ${err?.message ?? err} — agent will see [audio] only`,
-              );
-            }
-          }
+          // Transcrição de áudio desabilitada temporariamente · OPENAI_API_KEY
+          // do .env é OpenRouter (sk-or-v1-*) e Whisper só funciona com chave
+          // OpenAI direta. Quando uma chave OPENAI_TRANSCRIBE_KEY real for
+          // configurada, reabilitar o bloco abaixo.
+          //
+          // if (savedMessage.type === PrismaContentType.AUDIO) {
+          //   try {
+          //     await this.transcription.transcribe(savedMessage.id, organizationId);
+          //   } catch (err: any) {
+          //     this.logger.warn(
+          //       `Auto-transcribe failed for ${savedMessage.id}: ${err?.message ?? err} — agent will see [audio] only`,
+          //     );
+          //   }
+          // }
           await this.tryAiAgent(conversationId, savedMessage.id);
         };
         dispatch().catch((err) =>
