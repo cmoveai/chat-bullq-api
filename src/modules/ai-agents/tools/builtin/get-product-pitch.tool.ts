@@ -64,13 +64,20 @@ export class GetProductPitchTool implements AiTool {
     const tenantId = this.config.get<string>('MEMBERS_TENANT_BRAVY');
 
     if (!apiKey || !tenantId) {
-      this.logger.warn(
-        'Trivapp credentials missing (MEMBERS_ADMIN_KEY / MEMBERS_TENANT_BRAVY)',
+      // Trivapp (catálogo externo do JP) não configurado nesta instância.
+      // Em vez de devolver erro técnico que o agente repassa pro cliente,
+      // devolve um fallback gracioso: o agente usa o CATÁLOGO inline do
+      // próprio system_prompt ou escala pra humano. Cliente nunca vê
+      // "Trivapp não configurado".
+      this.logger.debug(
+        'lookupOffering: catálogo externo não configurado — usar catálogo inline do prompt',
       );
       return {
         output: {
           ok: false,
-          error: 'Trivapp não configurado no servidor — fale com o admin',
+          fallback: true,
+          message:
+            'Catálogo externo indisponível. Use os preços/condições da seção CATÁLOGO do seu prompt. Se não houver, qualifique e use transferToHuman pra Cris fechar.',
         },
       };
     }
