@@ -1,5 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma, AutomationExecutionStatus } from '@prisma/client';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import {
+  Prisma,
+  AutomationExecutionStatus,
+  MessageDirection,
+  MessageContentType,
+  MessageStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { InstagramHttpClient } from '../channel-hub/adapters/instagram/instagram.http-client';
 
@@ -10,11 +18,11 @@ import { InstagramHttpClient } from '../channel-hub/adapters/instagram/instagram
  * Suporte atual:
  * - TRIGGER · IG_COMMENT, WA_MESSAGE (match por subtype)
  * - CONDITION · KEYWORD, FIRST_TIME (output-0 = sim, output-1 = não)
- * - ACTION · SEND_DM (Instagram), TAG (cria + vincula ao contato)
+ * - ACTION · SEND_DM (Instagram), SEND_WA (WhatsApp via fila outbound), TAG (cria + vincula ao contato)
  * - UTIL · END (encerra explicitamente)
  *
  * Não suporta ainda (loga SKIPPED com motivo):
- * - ACTION · SEND_WA, SEND_EMAIL, TRANSFER, RUN_AGENT
+ * - ACTION · SEND_EMAIL, TRANSFER, RUN_AGENT
  * - CONDITION · TIME_WINDOW, TAG
  * - UTIL · DELAY (precisa queue persistente)
  */
@@ -80,6 +88,7 @@ export class BpmnEngine {
   constructor(
     private readonly prisma: PrismaService,
     private readonly instagramHttp: InstagramHttpClient,
+    @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
   /**
@@ -295,7 +304,80 @@ export class BpmnEngine {
       return;
     }
 
-    // SEND_WA, SEND_EMAIL, TRANSFER, RUN_AGENT · não implementados ainda
+    if (subtype === 'SEND_WA') {
+      if (ctx.event.type !== 'WA_MESSAGE') {
+        ctx.errors.push('SEND_WA só funciona com TRIGGER WA_MESSAGE');
+        return;
+      }
+      const message = this.interpolate(node.data?.message ?? '', ctx);
+      if (!message.trim()) {
+        ctx.errors.push('SEND_WA sem mensagem · pulando');
+        return;
+      }
+      const contactId = (ctx.event as any).contactId;
+      const channelId = ctx.event.channelId;
+      const contactChannel = await this.prisma.contactChannel.findFirst({
+        where: { contactId, channelId },
+        select: { externalId: true },
+      });
+      if (!contactChannel?.externalId) {
+        ctx.errors.push('SEND_WA · contato sem externalId no canal · pulando');
+        return;
+      }
+      const conversation = await this.prisma.conversation.findFirst({
+        where: {
+          contactId,
+          channelId,
+          organizationId: ctx.event.organizationId,
+        },
+        orderBy: { lastMessageAt: 'desc' },
+        select: { id: true },
+      });
+      if (!conversation) {
+        ctx.errors.push('SEND_WA · sem conversa pro contato · pulando');
+        return;
+      }
+      // Mesma fila que o inbox/IA usam: o processor resolve o adapter certo
+      // (Z-API / Zappfy / WhatsApp Oficial) por channel.type e cuida de
+      // status, idempotência e realtime. Reuso, não duplicação.
+      const msg = await this.prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction: MessageDirection.OUTBOUND,
+          type: MessageContentType.TEXT,
+          content: { text: message },
+          status: MessageStatus.QUEUED,
+          metadata: { automationId: ctx.automationId },
+        },
+      });
+      await this.prisma.conversation
+        .update({
+          where: { id: conversation.id },
+          data: { lastMessageAt: new Date() },
+        })
+        .catch(() => undefined);
+      await this.outboundQueue.add(
+        'send-outbound',
+        {
+          messageId: msg.id,
+          channelId,
+          contactExternalId: contactChannel.externalId,
+          message: {
+            type: MessageContentType.TEXT,
+            content: { text: message },
+          },
+        },
+        {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 5000 },
+          removeOnComplete: true,
+          removeOnFail: false,
+        },
+      );
+      return;
+    }
+
+    // SEND_EMAIL, TRANSFER, RUN_AGENT · não implementados ainda
     ctx.errors.push(`ACTION ${subtype} não implementada ainda · pulando`);
   }
 
