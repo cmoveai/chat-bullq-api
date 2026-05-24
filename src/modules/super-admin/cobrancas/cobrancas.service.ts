@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { CobrancaStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 import { CobrancasWhatsappService, type WaSendResult } from './cobrancas-whatsapp.service';
+import { buildStaticPixBRCode } from './pix-brcode';
+import { EmailService } from '../../email/email.service';
 
 export interface CreateCobrancaInput {
   cliente_nome: string;
@@ -30,6 +32,7 @@ export class CobrancasService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly whatsapp: CobrancasWhatsappService,
+    private readonly email: EmailService,
   ) {}
 
   async list() {
@@ -45,7 +48,7 @@ export class CobrancasService {
   }
 
   async create(input: CreateCobrancaInput) {
-    const slug = input.slug ?? this.generateSlug(input.cliente_nome, input.etapa);
+    const slug = input.slug ?? this.generateSlug();
     if (!input.cliente_nome || !input.etapa || !input.valor || !input.vencimento || !input.pix_chave) {
       throw new BadRequestException(
         'cliente_nome, etapa, valor, vencimento e pix_chave são obrigatórios',
@@ -66,7 +69,17 @@ export class CobrancasService {
           valor: new Prisma.Decimal(input.valor),
           vencimento: new Date(input.vencimento + 'T00:00:00'),
           pixChave: input.pix_chave,
-          pixEmv: input.pix_emv ?? null,
+          // Gera o copia-e-cola/QR Pix estático (BACEN) automaticamente a
+          // partir da chave + valor. Se a API Pix dinâmica enviar o EMV
+          // pronto, esse prevalece.
+          pixEmv:
+            input.pix_emv ??
+            buildStaticPixBRCode({
+              pixKey: input.pix_chave,
+              amount: input.valor,
+              merchantName: 'CMOVE AI TECNOLOGIA',
+              merchantCity: 'SAO PAULO',
+            }),
           nfUrl: input.nf_url ?? null,
           recorrente: input.recorrente ?? false,
           recorrenciaDias: input.recorrente ? (input.recorrencia_dias ?? 30) : null,
@@ -102,6 +115,28 @@ export class CobrancasService {
     } catch (err) {
       this.logger.warn(`Auto-WhatsApp falhou: ${(err as Error).message}`);
       notification = { ok: false, reason: 'erro inesperado' };
+    }
+
+    // Auto e-mail · best-effort · não bloqueia criação
+    if (cobranca.clienteEmail) {
+      const valorFmt = Number(cobranca.valor).toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+      });
+      const venc = cobranca.vencimento.toLocaleDateString('pt-BR');
+      this.email
+        .sendRaw({
+          to: cobranca.clienteEmail,
+          subject: `Cobrança · ${cobranca.etapa} · ${valorFmt}`,
+          html: cobrancaEmailHtml({
+            nome: cobranca.clienteNome,
+            etapa: cobranca.etapa,
+            valor: valorFmt,
+            vencimento: venc,
+            link: publicLink,
+          }),
+        })
+        .catch((e) => this.logger.warn(`Auto-email falhou: ${(e as Error).message}`));
     }
 
     return { ...cobranca, notification, publicLink };
@@ -232,16 +267,40 @@ export class CobrancasService {
     });
   }
 
-  private generateSlug(clienteNome: string, etapa: string): string {
-    const base = `${clienteNome}-${etapa}`
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-    const month = new Date()
-      .toLocaleString('pt-BR', { month: '2-digit', year: 'numeric' })
-      .replace('/', '-');
-    return `${base}-${month}`.slice(0, 80);
+  // Slug curto pra link limpo (zap.cmove.ai/pagar/a3f9k2m) · não expõe nome/etapa.
+  private generateSlug(): string {
+    const chars = 'abcdefghijkmnpqrstuvwxyz23456789'; // sem 0/o/1/l/i (evita confusão)
+    let s = '';
+    for (let i = 0; i < 7; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
   }
+}
+
+function cobrancaEmailHtml(d: {
+  nome: string;
+  etapa: string;
+  valor: string;
+  vencimento: string;
+  link: string;
+}): string {
+  return `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#f4f4f5;font-family:Inter,Arial,sans-serif;padding:24px">
+  <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e4e4e7">
+    <div style="background:#0A0A0A;padding:20px 24px">
+      <span style="color:#1DB954;font-weight:600;font-size:13px;letter-spacing:1px">CMOVE.AI · ZAP</span>
+    </div>
+    <div style="padding:28px 24px">
+      <p style="color:#18181b;font-size:15px;margin:0 0 8px">Olá ${d.nome},</p>
+      <p style="color:#3f3f46;font-size:14px;margin:0 0 16px">Segue sua cobrança referente a <strong>${d.etapa}</strong>.</p>
+      <div style="background:#f4f4f5;border-radius:12px;padding:20px;text-align:center;margin:8px 0 20px">
+        <div style="color:#71717a;font-size:11px;text-transform:uppercase;letter-spacing:1px">Valor</div>
+        <div style="color:#18181b;font-size:30px;font-weight:700;margin:6px 0">${d.valor}</div>
+        <div style="color:#71717a;font-size:12px">Vencimento ${d.vencimento}</div>
+      </div>
+      <a href="${d.link}" style="display:block;background:#1DB954;color:#000000;text-decoration:none;text-align:center;padding:14px;border-radius:12px;font-weight:600;font-size:15px">Pagar com Pix</a>
+      <p style="color:#a1a1aa;font-size:12px;text-align:center;margin:18px 0 0">Qualquer dúvida, é só responder este e-mail.</p>
+    </div>
+    <div style="background:#fafafa;padding:14px 24px;text-align:center;border-top:1px solid #e4e4e7">
+      <span style="color:#a1a1aa;font-size:11px">CMOVE.AI · pagamento seguro</span>
+    </div>
+  </div></body></html>`;
 }

@@ -483,7 +483,16 @@ export class AiAgentRunnerService {
       // Surface silent failures: notify the org's humans whenever a tool
       // call returns ok:false / status>=400 OR an exception was thrown.
       // Without this, the Lívia case happens — IA transfers and nobody sees.
-      if (isToolCallFailure({ error: errorMessage ?? null, output })) {
+      // Exceção: fallback gracioso (output.fallback === true, ex.: catálogo
+      // externo não configurado) é comportamento esperado — o agente usa o
+      // catálogo inline do prompt. Não é falha, não alarma o admin.
+      const outObj = output as Record<string, any> | null;
+      const gracefulFallback =
+        !errorMessage && !!outObj && typeof outObj === 'object' && outObj.fallback === true;
+      if (
+        isToolCallFailure({ error: errorMessage ?? null, output }) &&
+        !gracefulFallback
+      ) {
         this.notifyToolFailure({
           ctx,
           toolName: call.name,

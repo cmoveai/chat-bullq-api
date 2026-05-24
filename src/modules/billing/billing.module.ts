@@ -7,10 +7,11 @@ import { LimitEnforcerService } from './limit-enforcer.service';
 import { StripeService } from './stripe.service';
 import { CheckoutController } from './checkout.controller';
 import { StripeWebhookController } from './stripe-webhook.controller';
+import { KirvanoWebhookController } from './kirvano-webhook.controller';
 
 @Global()
 @Module({
-  controllers: [BillingController, CheckoutController, StripeWebhookController],
+  controllers: [BillingController, CheckoutController, StripeWebhookController, KirvanoWebhookController],
   providers: [
     PlansService,
     SubscriptionsService,
