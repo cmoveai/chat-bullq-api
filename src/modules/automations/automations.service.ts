@@ -161,11 +161,31 @@ export class AutomationsService {
     type: AutomationType,
     config: Record<string, unknown>,
   ) {
+    const cfg = config as {
+      nodes?: unknown;
+      keywords?: unknown;
+      dmMessage?: unknown;
+    };
+
+    // Fluxo visual (BPMN · construtor): valida a ESTRUTURA do flow, não os
+    // campos do form legado. Identificado pela presença de `nodes`. O engine
+    // executa a partir de nodes/edges e ignora o `type`, então um flow de
+    // WhatsApp/Instagram/etc. passa por aqui sem exigir keywords/dmMessage.
+    if (Array.isArray(cfg.nodes)) {
+      const nodes = cfg.nodes as Array<{ type?: string }>;
+      if (nodes.length === 0) {
+        throw new BadRequestException('O fluxo precisa de pelo menos 1 nó');
+      }
+      if (!nodes.some((n) => n?.type === 'TRIGGER')) {
+        throw new BadRequestException(
+          'O fluxo precisa de um gatilho (nó TRIGGER)',
+        );
+      }
+      return;
+    }
+
+    // Form legado INSTAGRAM_DM_FROM_COMMENT (sem nodes)
     if (type === 'INSTAGRAM_DM_FROM_COMMENT') {
-      const cfg = config as {
-        keywords?: unknown;
-        dmMessage?: unknown;
-      };
       if (!Array.isArray(cfg.keywords) || cfg.keywords.length === 0) {
         throw new BadRequestException(
           'config.keywords deve ser um array com pelo menos 1 palavra',
