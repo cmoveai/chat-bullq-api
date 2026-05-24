@@ -227,11 +227,7 @@ export class InboundMessageProcessor extends WorkerHost {
       // BPMN flows · WhatsApp inbound (não-echo) dispara trigger WA_MESSAGE.
       // Best-effort · não bloqueia pipeline mesmo se falhar.
       if (!isEcho && message.channelType !== ChannelType.INSTAGRAM) {
-        const textContent =
-          (message as any).text ??
-          (message as any).body ??
-          (message as any).content ??
-          '';
+        const textContent = (message.content as any)?.text ?? '';
         this.bpmnEngine
           .handleTrigger({
             type: 'WA_MESSAGE',
