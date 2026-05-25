@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChatbotNode } from '@prisma/client';
+import { PrismaService } from '../../../database/prisma.service';
+import { isWithinBusinessHours } from '../../../common/business-hours.util';
 import { ChatbotSessionService } from '../session/chatbot-session.service';
 import { ChatbotFlowsRepository } from '../chatbot-flows/chatbot-flows.repository';
 import {
@@ -12,6 +14,7 @@ import { MenuNodeExecutor } from './node-executors/menu-node.executor';
 import { ConditionNodeExecutor } from './node-executors/condition-node.executor';
 import { WaitNodeExecutor } from './node-executors/wait-node.executor';
 import { TransferNodeExecutor } from './node-executors/transfer-node.executor';
+import { ActionNodeExecutor } from './node-executors/action-node.executor';
 
 export interface EngineResult {
   messages: { type: string; content: Record<string, any> }[];
@@ -28,11 +31,13 @@ export class ChatbotEngineService {
   constructor(
     private readonly sessionService: ChatbotSessionService,
     private readonly flowsRepo: ChatbotFlowsRepository,
+    private readonly prisma: PrismaService,
     messageExec: MessageNodeExecutor,
     menuExec: MenuNodeExecutor,
     conditionExec: ConditionNodeExecutor,
     waitExec: WaitNodeExecutor,
     transferExec: TransferNodeExecutor,
+    actionExec: ActionNodeExecutor,
   ) {
     this.executors = new Map<string, NodeExecutor>();
     this.executors.set(messageExec.nodeType, messageExec);
@@ -40,6 +45,7 @@ export class ChatbotEngineService {
     this.executors.set(conditionExec.nodeType, conditionExec);
     this.executors.set(waitExec.nodeType, waitExec);
     this.executors.set(transferExec.nodeType, transferExec);
+    this.executors.set(actionExec.nodeType, actionExec);
   }
 
   async processMessage(
@@ -58,6 +64,24 @@ export class ChatbotEngineService {
       const flow = await this.flowsRepo.findActiveFlowForChannel(channelId);
       if (!flow || !flow.nodes.length) {
         return { messages: [], transferToHuman: false, sessionEnded: true };
+      }
+
+      // Horário de funcionamento (opt-in por fluxo via triggerConfig.respectBusinessHours).
+      // Fora do horário, responde a mensagem de horário da org e NÃO inicia o fluxo.
+      const triggerConfig = (flow.triggerConfig ?? {}) as {
+        respectBusinessHours?: boolean;
+      };
+      if (triggerConfig.respectBusinessHours) {
+        const offHoursMessage = await this.getOffHoursMessage(channelId);
+        if (offHoursMessage !== null) {
+          return {
+            messages: offHoursMessage
+              ? [{ type: 'TEXT', content: { text: offHoursMessage } }]
+              : [],
+            transferToHuman: false,
+            sessionEnded: true,
+          };
+        }
       }
 
       const startNode = flow.nodes.find((n) => n.type === 'START');
@@ -153,5 +177,29 @@ export class ChatbotEngineService {
 
     await this.sessionService.destroy(conversationId);
     return { messages: allMessages, transferToHuman, transferDepartmentId, sessionEnded: true };
+  }
+
+  /**
+   * Off-hours message for a channel's org, or null if currently INSIDE business
+   * hours (the flow should run normally). Empty string means outside hours but
+   * no message configured — caller stays silent and still skips the flow.
+   */
+  private async getOffHoursMessage(channelId: string): Promise<string | null> {
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      select: {
+        organization: {
+          select: {
+            aiBusinessHours: true,
+            aiTimezone: true,
+            aiOutOfHoursMessage: true,
+          },
+        },
+      },
+    });
+    const org = channel?.organization;
+    if (!org) return null;
+    if (isWithinBusinessHours(org.aiBusinessHours, org.aiTimezone)) return null;
+    return (org.aiOutOfHoursMessage || '').trim();
   }
 }

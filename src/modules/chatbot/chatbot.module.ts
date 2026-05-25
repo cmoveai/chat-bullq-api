@@ -11,6 +11,7 @@ import { MenuNodeExecutor } from './engine/node-executors/menu-node.executor';
 import { ConditionNodeExecutor } from './engine/node-executors/condition-node.executor';
 import { WaitNodeExecutor } from './engine/node-executors/wait-node.executor';
 import { TransferNodeExecutor } from './engine/node-executors/transfer-node.executor';
+import { ActionNodeExecutor } from './engine/node-executors/action-node.executor';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { TransferNodeExecutor } from './engine/node-executors/transfer-node.exec
     ConditionNodeExecutor,
     WaitNodeExecutor,
     TransferNodeExecutor,
+    ActionNodeExecutor,
   ],
   exports: [ChatbotFlowsService, ChatbotFlowsRepository, ChatbotSessionService],
 })

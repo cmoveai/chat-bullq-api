@@ -14,6 +14,8 @@ import { WebhookEventsService } from '../../channel-hub/webhook-events.service';
 import { AgentRouterService } from '../../ai-agents/router/agent-router.service';
 import { AiAgentRunnerService } from '../../ai-agents/runner/agent-runner.service';
 import { BpmnEngine } from '../../automations/bpmn-engine.service';
+import { ChatbotSessionService } from '../../chatbot/session/chatbot-session.service';
+import { flowTriggerMatches } from '../../../common/flow-trigger.util';
 import { TranscriptionService } from '../messages/transcription.service';
 import {
   ChannelType,
@@ -83,6 +85,7 @@ export class InboundMessageProcessor extends WorkerHost {
     private readonly agentRunner: AiAgentRunnerService,
     private readonly transcription: TranscriptionService,
     private readonly bpmnEngine: BpmnEngine,
+    private readonly chatbotSession: ChatbotSessionService,
     @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
   ) {
     super();
@@ -258,7 +261,11 @@ export class InboundMessageProcessor extends WorkerHost {
         (status === ConversationStatus.BOT ||
           status === ConversationStatus.PENDING)
       ) {
-        const hasActiveBot = await this.checkActiveBotForChannel(channelId);
+        const hasActiveBot = await this.shouldDispatchChatbot(
+          channelId,
+          conversationId,
+          (message.content as any)?.text || '',
+        );
         if (hasActiveBot) {
           if (status === ConversationStatus.PENDING) {
             await this.prisma.conversation.update({
@@ -424,14 +431,31 @@ export class InboundMessageProcessor extends WorkerHost {
     }
   }
 
-  private async checkActiveBotForChannel(channelId: string): Promise<boolean> {
+  /**
+   * Decides whether this inbound should fire the rule-based chatbot.
+   *
+   * A conversation already mid-flow (live Redis session) always continues —
+   * the trigger is only evaluated to START a flow. On start we honor the
+   * flow's triggerType: KEYWORD only fires when the text matches a configured
+   * keyword; ALWAYS/FIRST_MESSAGE fire on any inbound. This keeps PENDING
+   * conversations with a keyword bot in the human queue until the keyword
+   * actually arrives (instead of silently flipping them to BOT).
+   */
+  private async shouldDispatchChatbot(
+    channelId: string,
+    conversationId: string,
+    messageText: string,
+  ): Promise<boolean> {
     const link = await this.prisma.chatbotFlowChannel.findFirst({
       where: {
         channelId,
         flow: { isActive: true, deletedAt: null },
       },
+      include: { flow: true },
     });
-    return !!link;
+    if (!link?.flow) return false;
+    if (await this.chatbotSession.exists(conversationId)) return true;
+    return flowTriggerMatches(link.flow, messageText);
   }
 
   /**
