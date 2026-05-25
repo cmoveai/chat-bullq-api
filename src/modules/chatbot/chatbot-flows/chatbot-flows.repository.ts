@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 
@@ -45,15 +46,37 @@ export class ChatbotFlowsRepository {
 
   async replaceNodes(
     flowId: string,
-    nodes: { type: string; name?: string; positionX: number; positionY: number; data: any; edges: any }[],
+    nodes: { id?: string; type: string; name?: string; positionX: number; positionY: number; data: any; edges: any }[],
   ) {
     await this.prisma.chatbotNode.deleteMany({ where: { flowId } });
     if (nodes.length === 0) return [];
 
+    // Recriamos os nós com IDs novos e únicos (evita colisão de PK entre flows).
+    // Mas as edges referenciam os IDs do cliente (ex: 'new_101') — então
+    // remapeamos cliente→novo e reescrevemos targetNodeId, senão TODA conexão
+    // quebra e o fluxo morre no 1º nó.
+    const idMap = new Map<string, string>();
+    for (const n of nodes) {
+      if (n.id) idMap.set(n.id, randomUUID());
+    }
+    const remap = (cid: string): string => idMap.get(cid) ?? cid;
+
     return this.prisma.$transaction(
       nodes.map((n) =>
         this.prisma.chatbotNode.create({
-          data: { flowId, type: n.type as any, name: n.name, positionX: n.positionX, positionY: n.positionY, data: n.data, edges: n.edges },
+          data: {
+            id: n.id ? remap(n.id) : undefined,
+            flowId,
+            type: n.type as any,
+            name: n.name,
+            positionX: n.positionX,
+            positionY: n.positionY,
+            data: n.data,
+            edges: (Array.isArray(n.edges) ? n.edges : []).map((e: any) => ({
+              ...e,
+              targetNodeId: remap(e.targetNodeId),
+            })),
+          },
         }),
       ),
     );
