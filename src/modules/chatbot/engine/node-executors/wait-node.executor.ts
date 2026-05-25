@@ -7,7 +7,10 @@ export class WaitNodeExecutor implements NodeExecutor {
 
   async execute(ctx: NodeExecutionContext): Promise<NodeExecutionResult> {
     if (!ctx.incomingMessage) {
-      const prompt = ctx.nodeData.prompt || 'Aguardando sua resposta...';
+      // Pausa esperando a resposta. Só manda mensagem se houver prompt explícito —
+      // sem prompt fica silencioso (a pergunta normalmente vem do MESSAGE anterior),
+      // evitando filler tipo "Aguardando sua resposta...".
+      const prompt = ctx.nodeData.prompt;
       return {
         nextNodeId: null,
         sendMessages: prompt ? [{ type: 'TEXT', content: { text: prompt } }] : [],

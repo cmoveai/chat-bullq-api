@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { NodeExecutor, NodeExecutionContext, NodeExecutionResult } from './node-executor.interface';
+import { interpolate } from './interpolate.util';
 
 @Injectable()
 export class MenuNodeExecutor implements NodeExecutor {
@@ -13,7 +14,7 @@ export class MenuNodeExecutor implements NodeExecutor {
 
     if (!ctx.incomingMessage) {
       const menuText = [
-        title || 'Escolha uma opção:',
+        interpolate(title || 'Escolha uma opção:', ctx.session.variables),
         '',
         ...options.map((opt, i) => `${i + 1}. ${opt.label}`),
       ].join('\n');
