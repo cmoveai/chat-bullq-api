@@ -5,6 +5,7 @@ import type { SignOptions } from 'jsonwebtoken';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { GoogleProfile } from './google.strategy';
+import { provisionDefaultPipeline } from '../pipelines/pipeline-defaults';
 
 /**
  * Cyber Onda 2 · #22 · Google OAuth login flow
@@ -60,7 +61,7 @@ export class GoogleAuthService {
     if (!user) {
       // Cria user + organização nova (mesmo fluxo do register tradicional)
       const slug = await this.generateUniqueSlug(profile.name);
-      user = await this.prisma.$transaction(async (tx) => {
+      const created = await this.prisma.$transaction(async (tx) => {
         const u = await tx.user.create({
           data: {
             email: profile.email,
@@ -81,9 +82,15 @@ export class GoogleAuthService {
           data: { organizationId: org.id, name: 'Geral', description: 'Departamento padrão', isDefault: true },
         });
         // Não cria departmentAgent agora · membro vira via UI depois
-        return u;
+        return { u, orgId: org.id };
       });
+      user = created.u;
       isNew = true;
+
+      // CRM out-of-the-box · pipeline default (best-effort, não derruba o login)
+      await provisionDefaultPipeline(this.prisma, created.orgId).catch((err) =>
+        this.logger.warn(`Default pipeline provisioning failed: ${err.message}`),
+      );
       this.logger.log(`Google signup novo · ${user.email}`);
     }
 

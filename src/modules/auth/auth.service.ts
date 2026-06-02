@@ -21,6 +21,7 @@ import { EmailService } from '../email/email.service';
 import { SubscriptionsService } from '../billing/subscriptions.service';
 import { LimitEnforcerService } from '../billing/limit-enforcer.service';
 import { AuthTokenType } from '@prisma/client';
+import { provisionDefaultPipeline } from '../pipelines/pipeline-defaults';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -132,6 +133,12 @@ export class AuthService {
     await this.subscriptions
       .createTrialForOrg(result.organization.id)
       .catch((err) => this.logger.warn(`Trial subscription failed: ${err.message}`));
+
+    // CRM out-of-the-box · pipeline default com estágios · sem isso o auto-card
+    // de conversas novas fica inerte e nenhum lead entra no CRM. Best-effort.
+    await provisionDefaultPipeline(this.prisma, result.organization.id).catch(
+      (err) => this.logger.warn(`Default pipeline provisioning failed: ${err.message}`),
+    );
 
     // Cyber Onda 1 · S1.5 · email verification obrigatório
     // Gera token + dispara verify · welcome só sai depois do clique no link
