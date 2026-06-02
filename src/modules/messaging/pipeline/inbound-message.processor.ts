@@ -256,6 +256,11 @@ export class InboundMessageProcessor extends WorkerHost {
         message: savedMessage,
       });
 
+      // Quando o flow scriptado (chatbot) assume a mensagem, ele tem
+      // precedência sobre o AI agent — senão os dois respondem na mesma
+      // conversa (lead vê resposta dobrada).
+      let routedToChatbot = false;
+
       if (
         !isEcho &&
         (status === ConversationStatus.BOT ||
@@ -289,6 +294,7 @@ export class InboundMessageProcessor extends WorkerHost {
               removeOnFail: false,
             },
           );
+          routedToChatbot = true;
           this.logger.log(`Routed to chatbot: conv=${conversationId}`);
         }
       }
@@ -306,7 +312,7 @@ export class InboundMessageProcessor extends WorkerHost {
       // instead of seeing "[audio]" and apologizing it can't listen. Cost
       // is ~$0.006/min — predictable and pays for itself the moment the
       // bot answers a single audio without bouncing the customer to text.
-      if (!isEcho) {
+      if (!isEcho && !routedToChatbot) {
         const dispatch = async () => {
           // Transcrição de áudio desabilitada temporariamente · OPENAI_API_KEY
           // do .env é OpenRouter (sk-or-v1-*) e Whisper só funciona com chave
