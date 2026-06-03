@@ -2,6 +2,7 @@ import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { PrismaService } from '../../../database/prisma.service';
+import { runWithTenant, runAsSystem } from '../../../database/tenant-context';
 import { IdempotencyService } from './idempotency.service';
 import { ContactResolverService } from './contact-resolver.service';
 import { ConversationResolverService } from './conversation-resolver.service';
@@ -92,6 +93,13 @@ export class InboundMessageProcessor extends WorkerHost {
   }
 
   async process(job: Job<InboundJobData | StatusJobData>): Promise<any> {
+    const org = job.data.organizationId;
+    return org
+      ? runWithTenant(org, () => this.handle(job))
+      : runAsSystem(() => this.handle(job));
+  }
+
+  private async handle(job: Job<InboundJobData | StatusJobData>): Promise<any> {
     if (job.name === 'process-status') {
       return this.processStatus(job.data as StatusJobData);
     }

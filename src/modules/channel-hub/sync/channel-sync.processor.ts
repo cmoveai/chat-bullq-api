@@ -3,6 +3,8 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { Channel, ChannelSyncStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { PrismaSystemService } from '../../../database/prisma-system.service';
+import { runWithTenant, runAsSystem } from '../../../database/tenant-context';
 import { ChannelAdapterRegistry } from '../channel-adapter.registry';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { HistoryImportService } from '../../messaging/pipeline/history-import.service';
@@ -32,6 +34,7 @@ export class ChannelSyncProcessor extends WorkerHost {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly system: PrismaSystemService,
     private readonly registry: ChannelAdapterRegistry,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly importer: HistoryImportService,
@@ -40,6 +43,15 @@ export class ChannelSyncProcessor extends WorkerHost {
   }
 
   async process(job: Job<SyncJobData>): Promise<any> {
+    const ch = await this.system.channel.findUnique({
+      where: { id: job.data.channelId },
+      select: { organizationId: true },
+    });
+    if (!ch) return runAsSystem(() => this.handle(job));
+    return runWithTenant(ch.organizationId, () => this.handle(job));
+  }
+
+  private async handle(job: Job<SyncJobData>): Promise<any> {
     const { syncJobId, channelId } = job.data;
 
     const syncJob = await this.prisma.channelSyncJob.findUnique({

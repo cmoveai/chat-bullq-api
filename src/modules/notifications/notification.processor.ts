@@ -1,6 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
+import { runWithTenant } from '../../database/tenant-context';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 @Processor('notifications', { concurrency: 10 })
@@ -12,6 +13,10 @@ export class NotificationProcessor extends WorkerHost {
   }
 
   async process(job: Job): Promise<any> {
+    return runWithTenant(job.data.organizationId, () => this.handle(job));
+  }
+
+  private async handle(job: Job): Promise<any> {
     const { notificationId, recipientId, organizationId, type, title, body, data } = job.data;
 
     this.realtimeGateway.emitToUser(recipientId, 'notification:new', {
