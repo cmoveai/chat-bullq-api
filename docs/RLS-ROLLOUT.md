@@ -1,0 +1,49 @@
+# RLS multi-tenant — rollout (Fase 0)
+
+Isolamento de tenant em profundidade no Postgres, além da camada de aplicação
+(OrgGuard). Objetivo: mesmo que um service esqueça o `where organizationId`, o
+banco não vaza dados de outro tenant.
+
+## Mecanismo (provado)
+
+- Role de aplicação dedicado **`bullq_app`** — SEM `SUPERUSER`, SEM `BYPASSRLS`.
+  Crítico: o role atual `bullq` é superuser+bypassrls e **ignora qualquer RLS**
+  (era a armadilha "qual=true"/teatro). RLS só é real conectando como `bullq_app`.
+- Policy por tabela: `organization_id = current_setting('app.current_tenant', true)`.
+  Sem o setting (NULL) → 0 linhas (safe-deny). Provado: tenant certo vê o dele,
+  tenant não-setado e org inexistente retornam 0.
+- 28 tabelas com `organization_id` cobertas (ver `scripts/setup-rls.ts`).
+  **Exceção:** `user_organizations` fica FORA da policy — é o que o OrgGuard lê
+  ANTES de resolver o tenant (circular). Acesso vai pelo client de sistema.
+
+## Estado atual
+
+- `scripts/setup-rls.ts` aplicado no **local** (role + policies). App local segue
+  conectando como `bullq` (superuser) → bypassa → runtime inalterado. RLS está
+  "armado mas inerte" até o flip.
+
+## Flip (passo a passo, por ambiente — NÃO feito ainda)
+
+1. **App-side (código):**
+   - `TenantContext` (AsyncLocalStorage) populado pelo OrgGuard (request) e pelos
+     resolvers de webhook/worker (a partir do tenant do payload).
+   - Extensão no PrismaService: por operação com tenant em contexto, roda dentro
+     de transação `SELECT set_config('app.current_tenant', <org>, true)` + a query.
+   - **Client de sistema** (PrismaService conectando como `bullq`, bypassa RLS)
+     para caminhos cross-tenant/pré-contexto: auth (login, achar user/membership),
+     super-admin, resolver de webhook (acha canal por phone_number_id antes do
+     tenant), workers de fila. Esses NÃO podem depender de `app.current_tenant`.
+2. **Infra:** criar `bullq_app` com LOGIN+senha em cada ambiente; `DATABASE_URL`
+   do app passa a conectar como `bullq_app`; migrations continuam como `bullq`
+   (owner). Rodar `setup-rls.ts --apply`.
+3. **Teste obrigatório antes de prod:** cada caminho de acesso (request por tenant,
+   webhook inbound, worker de fila, super-admin, auth/login, onboarding) tem que
+   funcionar sob `bullq_app` + contexto. Teste de isolamento: tenant A não vê
+   dado de B. Teste de "sem contexto" não derruba auth/super-admin (usam sistema).
+4. **Tabelas-filhas (2ª leva):** `messages`, `pipeline_stages`, `contact_channels`,
+   etc. (sem `organization_id` direto) — policy via subquery no pai, depois.
+
+## Rollback
+
+- `setup-rls.ts` é idempotente. Para desarmar: `ALTER TABLE x DISABLE ROW LEVEL
+  SECURITY` ou manter o app conectando como `bullq` (superuser bypassa tudo).
