@@ -21,6 +21,17 @@ banco não vaza dados de outro tenant.
 - `scripts/setup-rls.ts` aplicado no **local** (role + policies). App local segue
   conectando como `bullq` (superuser) → bypassa → runtime inalterado. RLS está
   "armado mas inerte" até o flip.
+- **Plumbing do flip CONSTRUÍDO e PROVADO (local), gated por `RLS_ENFORCED`:**
+  - `src/database/tenant-context.ts` — AsyncLocalStorage + `runWithTenant`/`runAsSystem`
+    (await DENTRO do run; sem isso o contexto se perde antes do Prisma executar).
+  - `src/database/prisma-rls.extension.ts` — `withTenantRls(base)`: por operação
+    de model, micro-transação com `set_config('app.current_tenant', …)`.
+  - `src/database/prisma.module.ts` — provider gated: flag OFF = classe normal
+    (prod idêntico); flag ON = conecta + retorna client estendido.
+  - `src/common/middleware/tenant-context.middleware.ts` — `run({})` + `enterWith`
+    fixam o tenant do header `x-organization-id` p/ toda a cadeia async do request.
+  - **Provado com código real (role bullq_app, flag ON):** tenant correto vê o seu
+    (942 contatos), tenant fake = 0, modo sistema = 0. Isolamento real via model ops.
 
 ## Flip (passo a passo, por ambiente — NÃO feito ainda)
 

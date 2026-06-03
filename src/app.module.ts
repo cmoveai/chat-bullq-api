@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TenantContextMiddleware } from './common/middleware/tenant-context.middleware';
 import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -102,4 +103,10 @@ import redisConfig from './config/redis.config';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // Fixa o tenant no contexto (AsyncLocalStorage) p/ todo request.
+    // Inerte enquanto RLS_ENFORCED=false; base do flip de RLS.
+    consumer.apply(TenantContextMiddleware).forRoutes('*');
+  }
+}
