@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { ChannelType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { PrismaSystemService } from '../../../database/prisma-system.service';
 
 @Injectable()
 export class ChannelsRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly system: PrismaSystemService,
+  ) {}
 
   async create(data: Prisma.ChannelUncheckedCreateInput) {
     return this.prisma.channel.create({ data });
@@ -27,8 +31,13 @@ export class ChannelsRepository {
     });
   }
 
+  /**
+   * Resolução CROSS-TENANT (webhook entrante: acha o canal por phone_number_id
+   * antes de saber o tenant). Usa o client de SISTEMA para bypassar a RLS —
+   * senão, sob bullq_app sem contexto, retornaria 0 e toda mensagem cairia.
+   */
   async findActiveByType(type: ChannelType) {
-    return this.prisma.channel.findMany({
+    return this.system.channel.findMany({
       where: { type, isActive: true, deletedAt: null },
     });
   }

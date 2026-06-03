@@ -32,6 +32,14 @@ banco não vaza dados de outro tenant.
     fixam o tenant do header `x-organization-id` p/ toda a cadeia async do request.
   - **Provado com código real (role bullq_app, flag ON):** tenant correto vê o seu
     (942 contatos), tenant fake = 0, modo sistema = 0. Isolamento real via model ops.
+- **Client de sistema CONSTRUÍDO + 1ª rota crítica wirada (provado):**
+  - `src/database/prisma-system.service.ts` — `PrismaSystemService` conecta via
+    `DATABASE_SYSTEM_URL` (role que bypassa RLS, ex. `bullq`); sem a env cai em
+    `DATABASE_URL` (= sem mudança quando flag OFF). NÃO leva a extensão de tenant.
+  - **Webhook resolver wirado:** `ChannelsRepository.findActiveByType` (cross-tenant,
+    acha canal por phone_number_id antes do tenant) passou a usar o client de sistema.
+  - Provado (app=bullq_app + system=bullq): app sem contexto=0, app com tenant=3,
+    sistema=3. Webhook resolve, queries do app isolam.
 
 ## Flip (passo a passo, por ambiente — NÃO feito ainda)
 

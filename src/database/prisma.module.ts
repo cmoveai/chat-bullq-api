@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
+import { PrismaSystemService } from './prisma-system.service';
 import { withTenantRls } from './prisma-rls.extension';
 
 /**
@@ -27,7 +28,8 @@ const RLS_ENFORCED = process.env.RLS_ENFORCED === 'true';
           },
         }
       : PrismaService,
+    PrismaSystemService,
   ],
-  exports: [PrismaService],
+  exports: [PrismaService, PrismaSystemService],
 })
 export class PrismaModule {}
