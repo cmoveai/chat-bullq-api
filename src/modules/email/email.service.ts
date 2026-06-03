@@ -25,8 +25,8 @@ export class EmailService {
     private readonly prisma: PrismaService,
   ) {
     const apiKey = this.config.get<string>('RESEND_API_KEY');
-    this.from = this.config.get<string>('EMAIL_FROM', 'CMOVE.AI-ZAP <cris@cmove.ai>');
-    this.appUrl = this.config.get<string>('APP_URL', 'https://zap.cmove.ai');
+    this.from = this.config.get<string>('EMAIL_FROM', 'EIXXO <cris@cmove.ai>');
+    this.appUrl = this.config.get<string>('APP_URL', 'https://app.eixxohub.com');
 
     if (!apiKey) {
       this.logger.warn('RESEND_API_KEY missing — emails will be logged but not sent');
@@ -97,12 +97,12 @@ export class EmailService {
   }
 
   async sendOtpCode(to: string, name: string, code: string, ttlMin: number): Promise<void> {
-    const subject = `CMOVE.AI-ZAP · Código de verificação: ${code}`;
+    const subject = `EIXXO · Código de verificação: ${code}`;
     const html = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #fafafa;">
         <h2 style="color: #0a0a0a; font-size: 20px; margin-bottom: 8px;">Olá, ${name}</h2>
         <p style="color: #525252; font-size: 14px; margin: 0 0 24px;">
-          Use o código abaixo pra verificar seu e-mail no CMOVE.AI-ZAP:
+          Use o código abaixo pra verificar seu e-mail no EIXXO:
         </p>
         <div style="background: #fff; border-radius: 12px; padding: 24px; text-align: center; border: 1px solid #e5e5e5;">
           <div style="font-family: ui-monospace, SF Mono, monospace; font-size: 36px; font-weight: 700; letter-spacing: 8px; color: #0a0a0a;">
@@ -116,7 +116,7 @@ export class EmailService {
           CMOVE.AI · Plataforma de automatização e agentes IA
         </p>
       </div>`;
-    const text = `Seu código CMOVE.AI-ZAP: ${code} · expira em ${ttlMin} minutos.`;
+    const text = `Seu código EIXXO: ${code} · expira em ${ttlMin} minutos.`;
     if (!this.resend) {
       this.logger.log(`[DRY-RUN] otp-email → ${to} · code ${code}`);
       return;

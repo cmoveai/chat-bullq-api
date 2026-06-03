@@ -7,9 +7,9 @@ export function renderWelcomeEmail(params: WelcomeEmailParams) {
   const { name, appUrl } = params;
   const firstName = name.split(' ')[0] || name;
 
-  const subject = `Sua CMOVE.AI-ZAP está pronta, ${firstName}`;
+  const subject = `Sua EIXXO está pronta, ${firstName}`;
 
-  const text = `Sua CMOVE.AI-ZAP está pronta, ${firstName}.
+  const text = `Sua EIXXO está pronta, ${firstName}.
 
 Você acaba de entrar no atendimento omnichannel mais inteligente do Brasil. WhatsApp, Instagram e DM, tudo num inbox só, com agentes de IA que delegam, cobram Pix sozinhos e nunca dormem.
 
@@ -68,7 +68,7 @@ cris@cmove.ai · cmove.ai`;
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td>
-                    <div style="display:inline-block;font-size:11px;letter-spacing:3px;color:#22c55e;text-transform:uppercase;font-weight:700;padding:6px 12px;border:1px solid rgba(34,197,94,0.3);border-radius:999px;margin-bottom:32px;">CMOVE.AI · ZAP</div>
+                    <div style="display:inline-block;font-size:11px;letter-spacing:3px;color:#22c55e;text-transform:uppercase;font-weight:700;padding:6px 12px;border:1px solid rgba(34,197,94,0.3);border-radius:999px;margin-bottom:32px;">EIXXO</div>
                     <h1 class="hero-h1" style="margin:0 0 16px 0;font-size:42px;line-height:1.1;color:#ffffff;font-weight:800;letter-spacing:-1.5px;">
                       Sua plataforma<br>está pronta, <span style="color:#22c55e;">${firstName}</span>.
                     </h1>
@@ -202,7 +202,7 @@ cris@cmove.ai · cmove.ai`;
                       <p style="margin:0 0 16px 0;font-size:15px;line-height:1.55;color:#27272a;font-weight:500;">
                         Travou em algum passo? Me chama no WhatsApp que eu ajudo na hora.
                       </p>
-                      <a href="https://wa.me/5511943464000?text=Oi%20Cris%2C%20travei%20no%20onboarding%20da%20CMOVE.AI-ZAP" style="display:inline-block;font-size:14px;color:#0a0a0a;text-decoration:none;font-weight:700;background:#f4f4f5;padding:12px 20px;border-radius:8px;border:1px solid #e4e4e7;">
+                      <a href="https://wa.me/5511943464000?text=Oi%20Cris%2C%20travei%20no%20onboarding%20da%20EIXXO" style="display:inline-block;font-size:14px;color:#0a0a0a;text-decoration:none;font-weight:700;background:#f4f4f5;padding:12px 20px;border-radius:8px;border:1px solid #e4e4e7;">
                         WhatsApp · 11 94346-4000
                       </a>
                     </td>
@@ -242,7 +242,7 @@ cris@cmove.ai · cmove.ai`;
                           <a href="https://cmove.ai" style="font-size:12px;color:#71717a;text-decoration:none;font-weight:600;">cmove.ai</a>
                         </td>
                         <td style="padding-right:20px;">
-                          <a href="https://zap.cmove.ai" style="font-size:12px;color:#71717a;text-decoration:none;font-weight:600;">zap.cmove.ai</a>
+                          <a href="https://app.eixxohub.com" style="font-size:12px;color:#71717a;text-decoration:none;font-weight:600;">app.eixxohub.com</a>
                         </td>
                         <td>
                           <a href="mailto:cris@cmove.ai" style="font-size:12px;color:#71717a;text-decoration:none;font-weight:600;">cris@cmove.ai</a>
@@ -250,7 +250,7 @@ cris@cmove.ai · cmove.ai`;
                       </tr>
                     </table>
                     <div style="margin-top:24px;padding-top:20px;border-top:1px solid #27272a;font-size:11px;color:#52525b;line-height:1.5;">
-                      Você recebeu este e-mail porque criou conta na CMOVE.AI-ZAP.<br>
+                      Você recebeu este e-mail porque criou conta na EIXXO.<br>
                       © ${new Date().getFullYear()} CMOVE.AI · CNPJ 66.432.401/0001-29
                     </div>
                   </td>

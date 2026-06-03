@@ -40,7 +40,7 @@ export class OtpService {
       type: 'text',
       text: {
         preview_url: false,
-        body: `*CMOVE.AI-ZAP · Verificação*\n\nSeu código é: *${code}*\n\nEle expira em ${OTP_TTL_MIN} minutos.\nNão compartilhe com ninguém.`,
+        body: `*EIXXO · Verificação*\n\nSeu código é: *${code}*\n\nEle expira em ${OTP_TTL_MIN} minutos.\nNão compartilhe com ninguém.`,
       },
     };
     const res = await fetch(url, {

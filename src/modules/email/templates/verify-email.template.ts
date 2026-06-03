@@ -9,11 +9,11 @@ export function renderVerifyEmail(params: VerifyEmailParams) {
   const firstName = name.split(' ')[0] || name;
   const verifyUrl = `${appUrl}/verify-email?token=${encodeURIComponent(token)}`;
 
-  const subject = `Confirme seu e-mail · CMOVE.AI-ZAP`;
+  const subject = `Confirme seu e-mail · EIXXO`;
 
   const text = `Confirme seu e-mail, ${firstName}.
 
-Pra liberar seu acesso à plataforma CMOVE.AI-ZAP, clique no link abaixo dentro de 24 horas:
+Pra liberar seu acesso à plataforma EIXXO, clique no link abaixo dentro de 24 horas:
 
 ${verifyUrl}
 
@@ -37,7 +37,7 @@ Cris Magalhães · CMOVE.AI`;
         <tr><td class="px" style="padding:44px 48px 32px;background:linear-gradient(135deg,#0a0a0a 0%,#1c2a1d 100%);">
           <div style="display:inline-block;font-size:11px;letter-spacing:2.5px;color:#22c55e;text-transform:uppercase;font-weight:700;padding:5px 12px;border:1px solid rgba(34,197,94,0.4);border-radius:99px;margin-bottom:24px;">Confirmação de e-mail</div>
           <h1 class="h1" style="margin:0 0 12px;font-size:34px;line-height:1.1;color:#fff;font-weight:800;letter-spacing:-0.5px;">Falta um clique pra começar, ${firstName}.</h1>
-          <p style="margin:0;font-size:15px;line-height:1.6;color:#a1a1aa;">Confirme que este e-mail é seu pra liberar o acesso à plataforma CMOVE.AI-ZAP. O link expira em 24 horas.</p>
+          <p style="margin:0;font-size:15px;line-height:1.6;color:#a1a1aa;">Confirme que este e-mail é seu pra liberar o acesso à plataforma EIXXO. O link expira em 24 horas.</p>
         </td></tr>
 
         <tr><td class="px" align="center" style="padding:40px 48px 16px;">
@@ -50,7 +50,7 @@ Cris Magalhães · CMOVE.AI`;
         </td></tr>
 
         <tr><td class="px" style="padding:0 48px 32px;border-top:1px solid #e4e4e7;padding-top:20px;font-size:12px;color:#71717a;line-height:1.5;">
-          Se você não criou conta na CMOVE.AI-ZAP, pode ignorar este e-mail. Nenhuma ação adicional é necessária.<br><br>
+          Se você não criou conta na EIXXO, pode ignorar este e-mail. Nenhuma ação adicional é necessária.<br><br>
           CMOVE.AI · <a href="mailto:cris@cmove.ai" style="color:#71717a;text-decoration:underline;">cris@cmove.ai</a>
         </td></tr>
 

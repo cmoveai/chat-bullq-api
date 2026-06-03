@@ -39,8 +39,8 @@ export function renderNewLoginEmail(params: NewLoginEmailParams) {
   const ipShown = ip ? ip : 'IP não capturado';
 
   const subject = isFirstLogin
-    ? `Primeiro login na sua CMOVE.AI-ZAP`
-    : `Novo acesso detectado na sua CMOVE.AI-ZAP`;
+    ? `Primeiro login na sua EIXXO`
+    : `Novo acesso detectado na sua EIXXO`;
 
   const text = `${subject}, ${firstName}.
 
@@ -83,7 +83,7 @@ CMOVE.AI · cris@cmove.ai`;
                 ${isFirstLogin ? 'Primeiro acesso na sua conta.' : 'Novo acesso detectado.'}
               </h1>
               <p style="margin:0;font-size:15px;line-height:1.55;color:#a1a1aa;">
-                Detectamos um login na sua conta CMOVE.AI-ZAP vindo de ${isFirstLogin ? 'um' : 'um novo'} dispositivo ou localização. Confirme se foi você.
+                Detectamos um login na sua conta EIXXO vindo de ${isFirstLogin ? 'um' : 'um novo'} dispositivo ou localização. Confirme se foi você.
               </p>
             </td>
           </tr>
@@ -131,7 +131,7 @@ CMOVE.AI · cris@cmove.ai`;
 
           <tr>
             <td class="px" style="padding:0 44px 28px;font-size:12px;color:#71717a;line-height:1.5;border-top:1px solid #e4e4e7;padding-top:20px;">
-              CMOVE.AI · CMOVE.AI-ZAP · <a href="mailto:cris@cmove.ai" style="color:#71717a;text-decoration:underline;">cris@cmove.ai</a><br>
+              CMOVE.AI · EIXXO · <a href="mailto:cris@cmove.ai" style="color:#71717a;text-decoration:underline;">cris@cmove.ai</a><br>
               Você está recebendo este e-mail porque um login foi detectado na sua conta. Configurações de notificação ficam em <a href="${appUrl}/settings/security" style="color:#71717a;text-decoration:underline;">${appUrl}/settings/security</a>.
             </td>
           </tr>

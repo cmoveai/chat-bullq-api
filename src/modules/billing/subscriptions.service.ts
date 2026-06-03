@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
-const TRIAL_DAYS = 30;
+const TRIAL_DAYS = 7;
 const DEFAULT_TRIAL_PLAN = 'STARTER';
 
 @Injectable()

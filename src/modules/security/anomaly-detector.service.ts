@@ -98,7 +98,7 @@ export class AnomalyDetectorService {
     );
 
     await this.notifyAdmin({
-      subject: `[CMOVE.AI-ZAP] Login em país novo · ${opts.email}`,
+      subject: `[EIXXO] Login em país novo · ${opts.email}`,
       lines: [
         `Usuário: ${opts.name} <${opts.email}>`,
         `Country atual: ${opts.country}`,
@@ -141,7 +141,7 @@ export class AnomalyDetectorService {
     );
 
     await this.notifyAdmin({
-      subject: `[CMOVE.AI-ZAP] Spike de logins suspeito · IP ${ip}`,
+      subject: `[EIXXO] Spike de logins suspeito · IP ${ip}`,
       lines: [
         `IP: ${ip}`,
         `Tentativas em 5min: ${recent.length}`,

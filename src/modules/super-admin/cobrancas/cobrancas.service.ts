@@ -267,7 +267,7 @@ export class CobrancasService {
     });
   }
 
-  // Slug curto pra link limpo (zap.cmove.ai/pagar/a3f9k2m) · não expõe nome/etapa.
+  // Slug curto pra link limpo (app.eixxohub.com/pagar/a3f9k2m) · não expõe nome/etapa.
   private generateSlug(): string {
     const chars = 'abcdefghijkmnpqrstuvwxyz23456789'; // sem 0/o/1/l/i (evita confusão)
     let s = '';
@@ -286,7 +286,7 @@ function cobrancaEmailHtml(d: {
   return `<!doctype html><html lang="pt-BR"><body style="margin:0;background:#f4f4f5;font-family:Inter,Arial,sans-serif;padding:24px">
   <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e4e4e7">
     <div style="background:#0A0A0A;padding:20px 24px">
-      <span style="color:#1DB954;font-weight:600;font-size:13px;letter-spacing:1px">CMOVE.AI · ZAP</span>
+      <span style="color:#1DB954;font-weight:600;font-size:13px;letter-spacing:1px">EIXXO</span>
     </div>
     <div style="padding:28px 24px">
       <p style="color:#18181b;font-size:15px;margin:0 0 8px">Olá ${d.nome},</p>

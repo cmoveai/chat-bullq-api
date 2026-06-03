@@ -67,7 +67,7 @@ export class GoogleAuthController {
   }
 
   private frontUrl(path: string): string {
-    const base = this.config.get<string>('APP_URL', 'https://zap.cmove.ai');
+    const base = this.config.get<string>('APP_URL', 'https://app.eixxohub.com');
     return `${base}${path}`;
   }
 

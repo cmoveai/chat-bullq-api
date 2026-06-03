@@ -38,7 +38,7 @@ export class StripeService {
     const key = this.config.get<string>('STRIPE_SECRET_KEY');
     this.client = key ? new Stripe(key, { apiVersion: '2025-09-30.clover' as Stripe.LatestApiVersion }) : null;
     this.webhookSecret = this.config.get<string>('STRIPE_WEBHOOK_SECRET');
-    this.appUrl = this.config.get<string>('APP_URL', 'https://zap.cmove.ai');
+    this.appUrl = this.config.get<string>('APP_URL', 'https://app.eixxohub.com');
   }
 
   async createCheckout(req: CheckoutRequest): Promise<CheckoutResponse> {

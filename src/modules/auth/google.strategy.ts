@@ -8,7 +8,7 @@ import { Strategy, type VerifyCallback, type Profile } from 'passport-google-oau
  *
  * Env-gated · sem GOOGLE_CLIENT_ID, strategy não registra (endpoint dá 503).
  * Callback URL deve bater com o autorizado no Google Console:
- *   https://zap.cmove.ai/api/v1/auth/google/callback
+ *   https://app.eixxohub.com/api/v1/auth/google/callback
  */
 
 export interface GoogleProfile {
@@ -28,7 +28,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     const clientSecret = config.get<string>('GOOGLE_CLIENT_SECRET');
     const callbackURL =
       config.get<string>('GOOGLE_CALLBACK_URL') ??
-      'https://zap.cmove.ai/api/v1/auth/google/callback';
+      'https://app.eixxohub.com/api/v1/auth/google/callback';
 
     // Strategy carrega mesmo sem credenciais · em prod com env vazio passa
     // placeholder. Endpoint guard rejeita antes via isEnabled() no service.

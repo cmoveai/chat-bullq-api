@@ -9,11 +9,11 @@ export function renderResetPasswordEmail(params: ResetPasswordParams) {
   const firstName = name.split(' ')[0] || name;
   const resetUrl = `${appUrl}/reset-password?token=${encodeURIComponent(token)}`;
 
-  const subject = `Redefinir senha · CMOVE.AI-ZAP`;
+  const subject = `Redefinir senha · EIXXO`;
 
   const text = `Redefinição de senha, ${firstName}.
 
-Você (ou alguém) pediu pra redefinir a senha da sua conta CMOVE.AI-ZAP. Clique no link abaixo dentro de 1 hora pra cadastrar nova senha:
+Você (ou alguém) pediu pra redefinir a senha da sua conta EIXXO. Clique no link abaixo dentro de 1 hora pra cadastrar nova senha:
 
 ${resetUrl}
 

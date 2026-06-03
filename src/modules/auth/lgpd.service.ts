@@ -78,7 +78,7 @@ export class LgpdService {
     return {
       _meta: {
         exportedAt: new Date().toISOString(),
-        platform: 'CMOVE.AI-ZAP',
+        platform: 'EIXXO',
         version: '1.0',
         legalBasis: 'LGPD Art. 18, II e V (acesso e portabilidade)',
         contact: 'cris@cmove.ai',
