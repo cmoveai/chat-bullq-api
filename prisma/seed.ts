@@ -4,9 +4,9 @@ import * as bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
-  const adminEmail = 'admin@bravy.com';
+  const adminEmail = 'admin@cmove.ai';
   const adminPassword = 'Admin@123';
-  const adminName = 'Admin Bravy';
+  const adminName = 'Admin CMOVE.AI';
 
   const existing = await prisma.user.findUnique({
     where: { email: adminEmail },
@@ -29,11 +29,11 @@ async function main() {
       },
     });
 
-    const slug = `bravy-admin-${Date.now().toString(36)}`;
+    const slug = `cmove-admin-${Date.now().toString(36)}`;
 
     const organization = await tx.organization.create({
       data: {
-        name: 'Bravy HQ',
+        name: 'CMOVE.AI',
         slug,
         plan: 'enterprise',
         settings: {

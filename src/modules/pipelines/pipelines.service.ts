@@ -15,26 +15,11 @@ import {
   UpdatePipelineDto,
   UpsertStageDto,
 } from './dto/pipeline.dto';
+import { DEFAULT_PIPELINE_STAGES } from './pipeline-defaults';
 
-// 15 stages padrão · paridade com AutomateFlow Kanban
-// (NORMAL pra fluxo · WON pra fechamento positivo · LOST pra perdido)
-const DEFAULT_STAGES: UpsertStageDto[] = [
-  { name: 'Boas-vindas', color: 'sky', type: 'NORMAL', order: 0 },
-  { name: 'Lead', color: 'blue', type: 'NORMAL', order: 1 },
-  { name: 'Novo Ticket', color: 'indigo', type: 'NORMAL', order: 2 },
-  { name: 'Configuração', color: 'violet', type: 'NORMAL', order: 3 },
-  { name: 'Em Andamento', color: 'amber', type: 'NORMAL', order: 4 },
-  { name: 'Qualificado', color: 'purple', type: 'NORMAL', order: 5 },
-  { name: 'Aguardando Cliente', color: 'fuchsia', type: 'NORMAL', order: 6 },
-  { name: 'Proposta', color: 'pink', type: 'NORMAL', order: 7 },
-  { name: 'Treinamento', color: 'yellow', type: 'NORMAL', order: 8 },
-  { name: 'Ativo', color: 'emerald', type: 'NORMAL', order: 9 },
-  { name: 'Negociação', color: 'orange', type: 'NORMAL', order: 10 },
-  { name: 'Resolvido', color: 'teal', type: 'NORMAL', order: 11 },
-  { name: 'Fechado', color: 'green', type: 'WON', order: 12 },
-  { name: 'Ganho', color: 'green', type: 'WON', order: 13 },
-  { name: 'Perdido', color: 'red', type: 'LOST', order: 14 },
-];
+// 15 stages padrão · paridade com AutomateFlow Kanban · fonte única em
+// pipeline-defaults.ts (reusado pelo provisionamento automático no signup).
+const DEFAULT_STAGES: UpsertStageDto[] = DEFAULT_PIPELINE_STAGES;
 
 @Injectable()
 export class PipelinesService {
