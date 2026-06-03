@@ -8,6 +8,7 @@ import { ChannelType, OrgRole } from '@prisma/client';
 import axios from 'axios';
 import { PrismaService } from '../../../database/prisma.service';
 import { ChannelsService } from '../channels/channels.service';
+import { EncryptionService } from '../../../common/crypto/encryption.service';
 import { EmbeddedSignupDto } from './dto/embedded-signup.dto';
 
 /**
@@ -37,6 +38,7 @@ export class WhatsAppOnboardingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly channels: ChannelsService,
+    private readonly encryption: EncryptionService,
   ) {}
 
   private get apiVersion(): string {
@@ -84,7 +86,9 @@ export class WhatsAppOnboardingService {
     const displayName = await this.fetchDisplayName(phoneNumberId, accessToken);
 
     const config = {
-      accessToken,
+      // token cifrado at-rest (AES-256-GCM); as chamadas vivas acima usaram o
+      // accessToken em texto puro, mas no banco vai cifrado.
+      accessToken: this.encryption.encrypt(accessToken),
       phoneNumberId,
       businessAccountId: wabaId,
       appSecret,

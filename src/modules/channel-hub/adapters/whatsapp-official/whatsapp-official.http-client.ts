@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Channel } from '@prisma/client';
 import axios, { AxiosInstance } from 'axios';
+import { EncryptionService } from '../../../../common/crypto/encryption.service';
 
 interface WaOfficialConfig {
   accessToken: string;
@@ -13,10 +14,13 @@ interface WaOfficialConfig {
 export class WhatsAppOfficialHttpClient {
   private readonly logger = new Logger(WhatsAppOfficialHttpClient.name);
 
+  constructor(private readonly encryption: EncryptionService) {}
+
   private getConfig(channel: Channel): WaOfficialConfig {
     const config = channel.config as Record<string, any>;
     return {
-      accessToken: config.accessToken,
+      // decrypt: aceita token legado em texto puro ou cifrado (enc:v1:)
+      accessToken: this.encryption.decrypt(config.accessToken) ?? config.accessToken,
       phoneNumberId: config.phoneNumberId,
       businessAccountId: config.businessAccountId,
       apiVersion: config.apiVersion || 'v21.0',

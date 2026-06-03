@@ -21,6 +21,7 @@ import {
   type ChannelAccess,
 } from '../../iam/channel-access/channel-access.service';
 import { LimitEnforcerService } from '../../billing/limit-enforcer.service';
+import { EncryptionService } from '../../../common/crypto/encryption.service';
 
 @Injectable()
 export class ChannelsService {
@@ -37,7 +38,27 @@ export class ChannelsService {
     private readonly prisma: PrismaService,
     private readonly channelAccess: ChannelAccessService,
     private readonly limitEnforcer: LimitEnforcerService,
+    private readonly encryption: EncryptionService,
   ) {}
+
+  /**
+   * Cifra at-rest os segredos da família Meta no config (accessToken/
+   * pageAccessToken). Idempotente (encrypt é no-op em valor já cifrado).
+   * Tokens de outros provedores (Z-API/Zappfy) usam outras chaves e não são
+   * tocados aqui — seus clients não decifram.
+   */
+  private encryptConfigSecrets<T extends Record<string, any> | undefined>(
+    config: T,
+  ): T {
+    if (!config || typeof config !== 'object') return config;
+    const out: Record<string, any> = { ...config };
+    for (const k of ['accessToken', 'pageAccessToken']) {
+      if (typeof out[k] === 'string' && out[k].length > 0) {
+        out[k] = this.encryption.encrypt(out[k]);
+      }
+    }
+    return out as T;
+  }
 
   async create(
     organizationId: string,
@@ -50,7 +71,7 @@ export class ChannelsService {
       organizationId,
       type: dto.type,
       name: dto.name,
-      config: dto.config,
+      config: this.encryptConfigSecrets(dto.config),
       webhookSecret: dto.webhookSecret,
     });
 
@@ -234,7 +255,10 @@ export class ChannelsService {
     if (Object.keys(rest).length === 0) {
       return this.repository.findById(id);
     }
-    return this.repository.update(id, rest);
+    const data = rest.config
+      ? { ...rest, config: this.encryptConfigSecrets(rest.config) }
+      : rest;
+    return this.repository.update(id, data);
   }
 
   /**

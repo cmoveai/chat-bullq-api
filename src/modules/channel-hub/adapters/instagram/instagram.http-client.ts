@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Channel } from '@prisma/client';
 import axios, { AxiosInstance } from 'axios';
+import { EncryptionService } from '../../../../common/crypto/encryption.service';
 
 interface InstagramConfig {
   accessToken: string;
@@ -13,10 +14,14 @@ interface InstagramConfig {
 export class InstagramHttpClient {
   private readonly logger = new Logger(InstagramHttpClient.name);
 
+  constructor(private readonly encryption: EncryptionService) {}
+
   private getConfig(channel: Channel): InstagramConfig {
     const config = channel.config as Record<string, any>;
+    const rawToken = config.accessToken || config.pageAccessToken;
     return {
-      accessToken: config.accessToken || config.pageAccessToken,
+      // decrypt: aceita token legado em texto puro ou cifrado (enc:v1:)
+      accessToken: this.encryption.decrypt(rawToken) ?? rawToken,
       igBusinessId: config.igBusinessId || config.igUserId,
       appSecret: config.appSecret,
       apiVersion: config.apiVersion || 'v21.0',
