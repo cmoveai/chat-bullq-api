@@ -13,15 +13,21 @@ export class EmbeddedSignupDto {
   @IsString()
   code: string;
 
-  @ApiProperty({ description: 'WhatsApp Business Account ID concedido no Embedded Signup' })
+  @ApiPropertyOptional({
+    description:
+      'WhatsApp Business Account ID. Opcional: quando o evento WA_EMBEDDED_SIGNUP ' +
+      'não vem (fluxo de concessão de acesso), o backend descobre via debug_token.',
+  })
+  @IsOptional()
   @IsString()
   @Matches(/^\d+$/, { message: 'wabaId deve ser numérico' })
-  wabaId: string;
+  wabaId?: string;
 
-  @ApiProperty({ description: 'Phone Number ID do número conectado' })
+  @ApiPropertyOptional({ description: 'Phone Number ID do número. Opcional: descoberto via Graph quando ausente.' })
+  @IsOptional()
   @IsString()
   @Matches(/^\d+$/, { message: 'phoneNumberId deve ser numérico' })
-  phoneNumberId: string;
+  phoneNumberId?: string;
 
   @ApiPropertyOptional({ description: 'Nome amigável do canal (default: número de exibição)' })
   @IsOptional()

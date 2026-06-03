@@ -62,23 +62,38 @@ export class WhatsAppOnboardingService {
 
     const accessToken = await this.exchangeCodeForToken(dto.code, appId, appSecret);
 
+    // O evento WA_EMBEDDED_SIGNUP nem sempre vem (fluxo de concessão de acesso
+    // do FB Login for Business não emite). Quando faltar waba/phone, descobre
+    // pelo token: debug_token → granular_scopes (WABA) → /phone_numbers.
+    let wabaId = dto.wabaId;
+    let phoneNumberId = dto.phoneNumberId;
+    if (!wabaId || !phoneNumberId) {
+      const discovered = await this.discoverWabaAndPhone(
+        accessToken,
+        appId,
+        appSecret,
+      );
+      wabaId = wabaId || discovered.wabaId;
+      phoneNumberId = phoneNumberId || discovered.phoneNumberId;
+    }
+
     // Registrar o número é best-effort: números recém-criados no ES costumam
     // precisar; números já registrados retornam erro que ignoramos.
-    await this.registerPhoneNumber(dto.phoneNumberId, accessToken);
+    await this.registerPhoneNumber(phoneNumberId, accessToken);
 
-    const displayName = await this.fetchDisplayName(dto.phoneNumberId, accessToken);
+    const displayName = await this.fetchDisplayName(phoneNumberId, accessToken);
 
     const config = {
       accessToken,
-      phoneNumberId: dto.phoneNumberId,
-      businessAccountId: dto.wabaId,
+      phoneNumberId,
+      businessAccountId: wabaId,
       appSecret,
       apiVersion: this.apiVersion,
     };
 
     const name =
       dto.channelName?.trim() ||
-      (displayName ? `WhatsApp · ${displayName}` : `WhatsApp · ${dto.phoneNumberId}`);
+      (displayName ? `WhatsApp · ${displayName}` : `WhatsApp · ${phoneNumberId}`);
 
     // Idempotência: mesmo número já conectado nesta org → atualiza o token.
     const existing = await this.prisma.channel.findFirst({
@@ -86,7 +101,7 @@ export class WhatsAppOnboardingService {
         organizationId,
         type: ChannelType.WHATSAPP_OFFICIAL,
         deletedAt: null,
-        config: { path: ['phoneNumberId'], equals: dto.phoneNumberId },
+        config: { path: ['phoneNumberId'], equals: phoneNumberId },
       },
     });
 
@@ -101,7 +116,7 @@ export class WhatsAppOnboardingService {
         .enrichProviderIds(updated.id, ChannelType.WHATSAPP_OFFICIAL)
         .catch(() => undefined);
       this.logger.log(
-        `WA Embedded Signup: número ${dto.phoneNumberId} reconectado (canal ${updated.id}, org ${organizationId})`,
+        `WA Embedded Signup: número ${phoneNumberId} reconectado (canal ${updated.id}, org ${organizationId})`,
       );
       return updated;
     }
@@ -112,9 +127,68 @@ export class WhatsAppOnboardingService {
       creator,
     );
     this.logger.log(
-      `WA Embedded Signup: número ${dto.phoneNumberId} conectado (canal ${channel.id}, WABA ${dto.wabaId}, org ${organizationId})`,
+      `WA Embedded Signup: número ${phoneNumberId} conectado (canal ${channel.id}, WABA ${wabaId}, org ${organizationId})`,
     );
     return channel;
+  }
+
+  /**
+   * Descobre WABA + phone_number_id pelo token quando o evento WA_EMBEDDED_SIGNUP
+   * não veio. debug_token devolve granular_scopes; o escopo
+   * whatsapp_business_management traz target_ids = WABAs concedidas. Pra cada
+   * WABA, /phone_numbers lista os números.
+   */
+  private async discoverWabaAndPhone(
+    accessToken: string,
+    appId: string,
+    appSecret: string,
+  ): Promise<{ wabaId: string; phoneNumberId: string }> {
+    try {
+      const { data: dbg } = await axios.get(`${this.graphBase}/debug_token`, {
+        params: {
+          input_token: accessToken,
+          access_token: `${appId}|${appSecret}`,
+        },
+        timeout: 15000,
+      });
+      const scopes: Array<{ scope: string; target_ids?: string[] }> =
+        dbg?.data?.granular_scopes ?? [];
+      const waScope = scopes.find(
+        (s) => s.scope === 'whatsapp_business_management',
+      );
+      const wabaIds = waScope?.target_ids ?? [];
+      if (!wabaIds.length) {
+        throw new BadRequestException(
+          'Nenhuma conta WhatsApp (WABA) foi concedida no fluxo. Refaça e selecione a conta.',
+        );
+      }
+      for (const wabaId of wabaIds) {
+        const { data: pn } = await axios.get(
+          `${this.graphBase}/${wabaId}/phone_numbers`,
+          {
+            params: { access_token: accessToken },
+            timeout: 15000,
+          },
+        );
+        const first = pn?.data?.[0];
+        if (first?.id) {
+          this.logger.log(
+            `WA Embedded Signup: descoberto via Graph WABA ${wabaId} número ${first.id}`,
+          );
+          return { wabaId, phoneNumberId: String(first.id) };
+        }
+      }
+      throw new BadRequestException(
+        'Conta WhatsApp concedida mas sem número de telefone disponível.',
+      );
+    } catch (error: any) {
+      if (error instanceof BadRequestException) throw error;
+      const meta = error.response?.data?.error?.message || error.message;
+      this.logger.error(`Falha ao descobrir WABA/número via Graph: ${meta}`);
+      throw new InternalServerErrorException(
+        'Não foi possível identificar a conta WhatsApp conectada.',
+      );
+    }
   }
 
   /** Troca o authorization code por um access token (business integration system user). */
@@ -124,6 +198,9 @@ export class WhatsAppOnboardingService {
     appSecret: string,
   ): Promise<string> {
     try {
+      // Code do Embedded Signup (FB.login override_default_response_type=true,
+      // página servida em HTTPS). Troca server-side SEM redirect_uri, conforme
+      // doc da Meta. (Em HTTP o FB.login nem roda — exige HTTPS.)
       const { data } = await axios.get(`${this.graphBase}/oauth/access_token`, {
         params: { client_id: appId, client_secret: appSecret, code },
         timeout: 30000,
@@ -133,8 +210,12 @@ export class WhatsAppOnboardingService {
       }
       return data.access_token as string;
     } catch (error: any) {
-      const meta = error.response?.data?.error?.message || error.message;
-      this.logger.error(`Falha ao trocar code por token: ${meta}`);
+      const err = error.response?.data?.error;
+      const meta = err?.message || error.message;
+      this.logger.error(
+        `Falha ao trocar code por token: ${meta}` +
+          (err?.error_subcode ? ` (subcode ${err.error_subcode})` : ''),
+      );
       throw new InternalServerErrorException(
         'Não foi possível concluir a conexão com a Meta (troca de código falhou).',
       );
