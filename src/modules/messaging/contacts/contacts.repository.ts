@@ -22,8 +22,8 @@ export class ContactsRepository {
       ];
     }
 
-    const [contacts, total] = await this.prisma.$transaction([
-      this.prisma.contact.findMany({
+    const [contacts, total] = await this.prisma.$transaction(async (tx) => [
+      await tx.contact.findMany({
         where,
         include: {
           channels: { include: { channel: { select: { id: true, type: true, name: true } } } },
@@ -34,7 +34,7 @@ export class ContactsRepository {
         skip,
         take,
       }),
-      this.prisma.contact.count({ where }),
+      await tx.contact.count({ where }),
     ]);
 
     return { contacts, total };

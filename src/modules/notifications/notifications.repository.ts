@@ -11,14 +11,14 @@ export class NotificationsRepository {
   }
 
   async findByUser(userId: string, orgId: string, skip: number, take: number) {
-    const [notifications, total] = await this.prisma.$transaction([
-      this.prisma.notification.findMany({
+    const [notifications, total] = await this.prisma.$transaction(async (tx) => [
+      await tx.notification.findMany({
         where: { recipientId: userId, organizationId: orgId },
         orderBy: { createdAt: 'desc' },
         skip,
         take,
       }),
-      this.prisma.notification.count({
+      await tx.notification.count({
         where: { recipientId: userId, organizationId: orgId },
       }),
     ]);

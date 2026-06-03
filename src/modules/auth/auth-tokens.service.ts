@@ -25,15 +25,15 @@ export class AuthTokensService {
     const ttlHours = type === AuthTokenType.VERIFY_EMAIL ? TTL_VERIFY_EMAIL_HOURS : TTL_RESET_PASSWORD_HOURS;
     const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
-    await this.prisma.$transaction([
-      this.prisma.authToken.updateMany({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.authToken.updateMany({
         where: { userId, type, usedAt: null, expiresAt: { gt: new Date() } },
         data: { usedAt: new Date() }, // invalida tokens anteriores
-      }),
-      this.prisma.authToken.create({
+      });
+      await tx.authToken.create({
         data: { userId, type, tokenHash, expiresAt },
-      }),
-    ]);
+      });
+    });
 
     return plaintext;
   }

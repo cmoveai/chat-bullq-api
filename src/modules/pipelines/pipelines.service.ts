@@ -43,12 +43,12 @@ export class PipelinesService {
 
   async getBoard(pipelineId: string, organizationId: string) {
     const pipeline = await this.assertPipeline(pipelineId, organizationId);
-    const [stages, cards] = await this.prisma.$transaction([
-      this.prisma.pipelineStage.findMany({
+    const [stages, cards] = await this.prisma.$transaction(async (tx) => [
+      await tx.pipelineStage.findMany({
         where: { pipelineId },
         orderBy: { order: 'asc' },
       }),
-      this.prisma.card.findMany({
+      await tx.card.findMany({
         where: { pipelineId },
         orderBy: { order: 'asc' },
         include: {

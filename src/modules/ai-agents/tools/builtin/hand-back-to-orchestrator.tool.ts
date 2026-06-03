@@ -42,12 +42,12 @@ export class HandBackToOrchestratorTool implements AiTool {
   ): Promise<ToolResult> {
     const reason = String(input.reason ?? '').trim();
 
-    await this.prisma.$transaction([
-      this.prisma.conversation.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.conversation.update({
         where: { id: ctx.conversationId },
         data: { activeAgentId: null },
-      }),
-      this.prisma.aiAgentHandoff.create({
+      });
+      await tx.aiAgentHandoff.create({
         data: {
           conversationId: ctx.conversationId,
           fromAgentId: ctx.agentId,
@@ -59,16 +59,16 @@ export class HandBackToOrchestratorTool implements AiTool {
           toAgentId: ctx.agentId,
           reason,
         },
-      }),
-      this.prisma.conversationAuditLog.create({
+      });
+      await tx.conversationAuditLog.create({
         data: {
           conversationId: ctx.conversationId,
           actorId: null,
           action: 'AI_HANDED_BACK',
           metadata: { fromAgentId: ctx.agentId, reason, runId: ctx.runId },
         },
-      }),
-    ]);
+      });
+    });
 
     this.realtime.emitToConversation(
       ctx.conversationId,

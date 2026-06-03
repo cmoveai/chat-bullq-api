@@ -15,8 +15,8 @@ export class MessagesRepository {
     skip: number,
     take: number,
   ) {
-    const [messages, total] = await this.prisma.$transaction([
-      this.prisma.message.findMany({
+    const [messages, total] = await this.prisma.$transaction(async (tx) => [
+      await tx.message.findMany({
         where: { conversationId },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -25,7 +25,7 @@ export class MessagesRepository {
           sender: { select: { id: true, name: true, avatarUrl: true } },
         },
       }),
-      this.prisma.message.count({ where: { conversationId } }),
+      await tx.message.count({ where: { conversationId } }),
     ]);
     return { messages: messages.reverse(), total };
   }

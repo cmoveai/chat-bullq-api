@@ -137,8 +137,8 @@ export class ConversationsRepository {
       where.messages = { some: { direction: 'INBOUND' } };
     }
 
-    const [conversations, total] = await this.prisma.$transaction([
-      this.prisma.conversation.findMany({
+    const [conversations, total] = await this.prisma.$transaction(async (tx) => [
+      await tx.conversation.findMany({
         where,
         include: {
           contact: {
@@ -174,7 +174,7 @@ export class ConversationsRepository {
         skip,
         take,
       }),
-      this.prisma.conversation.count({ where }),
+      await tx.conversation.count({ where }),
     ]);
 
     // Per-user unread counters. Caller passes currentUserId; the user's

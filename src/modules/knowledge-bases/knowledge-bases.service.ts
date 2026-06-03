@@ -160,18 +160,18 @@ export class KnowledgeBasesService {
     const filtered = dto.agentIds.filter((id) => validIds.has(id));
 
     // Substitui (replace full)
-    await this.prisma.$transaction([
-      this.prisma.agentKnowledgeBase.deleteMany({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.agentKnowledgeBase.deleteMany({
         where: { knowledgeBaseId },
-      }),
-      this.prisma.agentKnowledgeBase.createMany({
+      });
+      await tx.agentKnowledgeBase.createMany({
         data: filtered.map((agentId) => ({
           agentId,
           knowledgeBaseId,
         })),
         skipDuplicates: true,
-      }),
-    ]);
+      });
+    });
 
     return { ok: true, linked: filtered.length };
   }
