@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CobrancaStatus, Prisma } from '@prisma/client';
-import { PrismaService } from '../../../database/prisma.service';
+import { PrismaSystemService } from '../../../database/prisma-system.service';
 import { CobrancasWhatsappService, type WaSendResult } from './cobrancas-whatsapp.service';
 import { buildStaticPixBRCode } from './pix-brcode';
 import { EmailService } from '../../email/email.service';
@@ -29,7 +29,8 @@ export class CobrancasService {
   private readonly logger = new Logger(CobrancasService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    // Cobranças = visão/operação global do super-admin → client de sistema (bypassa RLS).
+    private readonly prisma: PrismaSystemService,
     private readonly config: ConfigService,
     private readonly whatsapp: CobrancasWhatsappService,
     private readonly email: EmailService,

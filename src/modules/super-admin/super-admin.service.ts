@@ -6,7 +6,7 @@ import {
   SupportTicketPriority,
   SupportTicketStatus,
 } from '@prisma/client';
-import { PrismaService } from '../../database/prisma.service';
+import { PrismaSystemService } from '../../database/prisma-system.service';
 
 export interface SuperAdminKpis {
   totalOrgs: number;
@@ -41,7 +41,8 @@ export interface FinanceSnapshot {
 @Injectable()
 export class SuperAdminService {
   constructor(
-    private readonly prisma: PrismaService,
+    // Visão GLOBAL cross-tenant: usa o client de sistema (bypassa RLS).
+    private readonly prisma: PrismaSystemService,
     private readonly config: ConfigService,
   ) {}
 

@@ -1,26 +1,58 @@
 import { PrismaClient } from '@prisma/client';
 import { getTenantStore } from './tenant-context';
 
+const SET_TENANT_SQL = `SELECT set_config('app.current_tenant', $1, true)`;
+
 /**
- * Extensão de RLS multi-tenant. Para cada operação de model, quando há um
- * `tenantId` no contexto (AsyncLocalStorage), roda a operação dentro de uma
- * micro-transação que primeiro faz `set_config('app.current_tenant', ...)` —
- * assim a policy do Postgres isola por tenant na MESMA conexão da query.
+ * Extensão de RLS multi-tenant. Garante que `app.current_tenant` esteja setado
+ * na MESMA conexão/transação de cada acesso ao banco, a partir do tenant no
+ * contexto (AsyncLocalStorage). A policy do Postgres então isola por tenant.
  *
- * Pré-condições que tornam isto seguro neste codebase:
- *  - Todo acesso a banco passa por model ops (zero $transaction/$queryRaw nos
- *    services) → nada aninha com a micro-transação.
- *  - Só liga quando RLS_ENFORCED=true E o app conecta como role sem superuser
- *    (bullq_app). Sob superuser a policy é ignorada (a extensão é inofensiva).
+ * Cobre os jeitos de acesso do codebase:
+ *  - Operação solta de model (`prisma.x.findMany()`) → micro-transação com o GUC.
+ *  - `$transaction(async (tx) => …)` (callback) → GUC setado no início da tx;
+ *    as ops no `tx` rodam dentro dela e enxergam o setting. PROVADO.
  *
- * Sem tenant no contexto (ou `system: true`): a operação roda normal. Sob
- * bullq_app + RLS isso significa 0 linhas em tabelas tenant (safe-deny) — por
- * isso caminhos de sistema (auth/super-admin/webhook/workers) precisam, no flip
- * completo, da conexão de sistema (role que bypassa). Ver docs/RLS-ROLLOUT.md.
+ * ⚠️ LIMITAÇÃO CONHECIDA — `$transaction([...])` (array/batch): incompatível com
+ * o wrapping por-operação. Os elementos do array são construídos pelo client
+ * ESTENDIDO (`prisma.x.count()`), então já passam pelo `$allOperations` e viram
+ * Promise comum (não PrismaPromise) → o batch do Prisma não os processa (trava).
+ * Fix correto: converter os 17 usos em array para a forma callback. Até lá, a
+ * flag RLS_ENFORCED NÃO deve ser ligada. Ver docs/RLS-ROLLOUT.md.
+ *
+ * Sem tenant no contexto (ou `system: true`): roda normal (sem GUC). Sob
+ * bullq_app + RLS isso = 0 linhas nas tabelas tenant (safe-deny) — por isso
+ * caminhos de sistema usam o PrismaSystemService (bypass). Ver docs/RLS-ROLLOUT.
+ *
+ * Seguro pois só liga com RLS_ENFORCED=true + conexão como role sem superuser.
  */
 export function withTenantRls<T extends PrismaClient>(base: T) {
   return base.$extends({
     name: 'tenant-rls',
+    client: {
+      $transaction(...args: any[]) {
+        const ctx = getTenantStore();
+        if (!ctx?.tenantId || ctx.system) {
+          return (base.$transaction as any)(...args);
+        }
+        const [arg0, arg1] = args;
+        // callback form: seta o GUC e roda o callback do usuário dentro da tx
+        if (typeof arg0 === 'function') {
+          return base.$transaction(async (tx: any) => {
+            await tx.$executeRawUnsafe(SET_TENANT_SQL, ctx.tenantId);
+            return arg0(tx);
+          }, arg1);
+        }
+        // array/batch form: prepende set_config e remove seu resultado (idx 0)
+        const batch = [
+          base.$executeRawUnsafe(SET_TENANT_SQL, ctx.tenantId),
+          ...arg0,
+        ];
+        return (base.$transaction as any)(batch, arg1).then((r: any[]) =>
+          r.slice(1),
+        );
+      },
+    },
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
@@ -30,10 +62,7 @@ export function withTenantRls<T extends PrismaClient>(base: T) {
           }
           const prop = model.charAt(0).toLowerCase() + model.slice(1);
           return base.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(
-              `SELECT set_config('app.current_tenant', $1, true)`,
-              ctx.tenantId,
-            );
+            await tx.$executeRawUnsafe(SET_TENANT_SQL, ctx.tenantId);
             return (tx as any)[prop][operation](args);
           });
         },

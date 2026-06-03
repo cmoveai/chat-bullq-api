@@ -12,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import type { SignOptions } from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
+import { PrismaSystemService } from '../../database/prisma-system.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { LoginAttemptsService } from './login-attempts.service';
@@ -31,6 +32,9 @@ export class AuthService {
 
   constructor(
     private readonly prisma: PrismaService,
+    // Bootstrap de tenant novo (signup) roda sem contexto de tenant → usa o
+    // client de sistema (bypassa RLS) p/ criar org/department/pipeline iniciais.
+    private readonly system: PrismaSystemService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly loginAttempts: LoginAttemptsService,
@@ -69,7 +73,7 @@ export class AuthService {
   private async registerNewWorkspace(dto: RegisterDto, hashedPassword: string) {
     const slug = this.generateSlug(dto.name);
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.system.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
           name: dto.name,
@@ -136,7 +140,7 @@ export class AuthService {
 
     // CRM out-of-the-box · pipeline default com estágios · sem isso o auto-card
     // de conversas novas fica inerte e nenhum lead entra no CRM. Best-effort.
-    await provisionDefaultPipeline(this.prisma, result.organization.id).catch(
+    await provisionDefaultPipeline(this.system, result.organization.id).catch(
       (err) => this.logger.warn(`Default pipeline provisioning failed: ${err.message}`),
     );
 
@@ -185,7 +189,7 @@ export class AuthService {
 
     await this.limitEnforcer.assertWithinLimit(invitation.organizationId, 'member');
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.system.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
           name: dto.name,

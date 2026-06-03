@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CobrancaStatus, Prisma } from '@prisma/client';
-import { PrismaService } from '../../../database/prisma.service';
+import { PrismaSystemService } from '../../../database/prisma-system.service';
 import { CobrancasWhatsappService } from './cobrancas-whatsapp.service';
 
 type LembreteTag = 'D-3' | 'D0' | 'D+3';
@@ -12,7 +12,8 @@ export class CobrancasCronService {
   private readonly logger = new Logger(CobrancasCronService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    // Cron sem contexto de tenant + escopo global → client de sistema (bypassa RLS).
+    private readonly prisma: PrismaSystemService,
     private readonly config: ConfigService,
     private readonly whatsapp: CobrancasWhatsappService,
   ) {}

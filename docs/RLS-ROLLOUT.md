@@ -41,6 +41,23 @@ banco não vaza dados de outro tenant.
   - Provado (app=bullq_app + system=bullq): app sem contexto=0, app com tenant=3,
     sistema=3. Webhook resolve, queries do app isolam.
 
+## ⚠️ BLOQUEADOR do flip: `$transaction([array])` (17 usos)
+
+O wrapping por-operação do `$allOperations` torna cada `prisma.x.count()` uma
+Promise comum (não PrismaPromise). Quando o caller monta `$transaction([
+prisma.a(), prisma.b() ])` com o client estendido, os elementos já vêm
+embrulhados → o batch do Prisma trava. Provado em teste (callback=ok, array=trava).
+**Fix:** converter os 17 usos de `$transaction([...])` para a forma callback
+`$transaction(async (tx) => { … })` (que o override cobre). É mecânico mas toca
+~10 arquivos e muda destructuring de resultado — fazer com cuidado/teste.
+**Enquanto não convertidos, `RLS_ENFORCED` NÃO pode ir a true.**
+
+Caminhos de SISTEMA já wirados (usam PrismaSystemService, bypass):
+- super-admin (`super-admin.service`, `cobrancas.service`, `cobrancas-cron.service`)
+- signup (`auth.service` + `google-auth.service`: transação de bootstrap + pipeline default)
+- resolver de webhook (`ChannelsRepository.findActiveByType`)
+Faltam: **workers BullMQ** (7 processors — resolver org e envolver em `runWithTenant`).
+
 ## Flip (passo a passo, por ambiente — NÃO feito ainda)
 
 1. **App-side (código):**

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { SignOptions } from 'jsonwebtoken';
 import { PrismaService } from '../../database/prisma.service';
+import { PrismaSystemService } from '../../database/prisma-system.service';
 import { AuditService } from '../audit/audit.service';
 import type { GoogleProfile } from './google.strategy';
 import { provisionDefaultPipeline } from '../pipelines/pipeline-defaults';
@@ -28,6 +29,8 @@ export class GoogleAuthService {
 
   constructor(
     private readonly prisma: PrismaService,
+    // Signup Google cria tenant novo sem contexto → client de sistema (bypass RLS).
+    private readonly system: PrismaSystemService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly audit: AuditService,
@@ -61,7 +64,7 @@ export class GoogleAuthService {
     if (!user) {
       // Cria user + organização nova (mesmo fluxo do register tradicional)
       const slug = await this.generateUniqueSlug(profile.name);
-      const created = await this.prisma.$transaction(async (tx) => {
+      const created = await this.system.$transaction(async (tx) => {
         const u = await tx.user.create({
           data: {
             email: profile.email,
@@ -88,7 +91,7 @@ export class GoogleAuthService {
       isNew = true;
 
       // CRM out-of-the-box · pipeline default (best-effort, não derruba o login)
-      await provisionDefaultPipeline(this.prisma, created.orgId).catch((err) =>
+      await provisionDefaultPipeline(this.system, created.orgId).catch((err) =>
         this.logger.warn(`Default pipeline provisioning failed: ${err.message}`),
       );
       this.logger.log(`Google signup novo · ${user.email}`);
