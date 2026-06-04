@@ -20,6 +20,7 @@ import { Public } from '../../common/decorators';
 import { AutomationEngine } from '../automations/automation-engine.service';
 import { BpmnEngine } from '../automations/bpmn-engine.service';
 import { SocialInteractionsService } from '../social-interactions/social-interactions.service';
+import { runWithTenant } from '../../database/tenant-context';
 import { ChannelAdapterRegistry } from './channel-adapter.registry';
 import { ChannelsService } from './channels/channels.service';
 import { WebhookEventsService } from './webhook-events.service';
@@ -180,29 +181,34 @@ export class WebhookGatewayController {
           rawPayload: comment.rawPayload,
         });
 
-        this.bpmnEngine
-          .handleTrigger({
-            type: 'IG_COMMENT',
-            channelId: channel.id,
-            organizationId: channel.organizationId,
-            externalEventId: comment.externalCommentId,
-            externalCommentId: comment.externalCommentId,
-            text: comment.text ?? '',
-            postId: (comment as any).postId,
-            username: comment.contactUsername ?? '',
-          })
-          .catch((err) =>
-            this.logger.error(
-              `BpmnEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
-            ),
-          );
-        this.automationEngine
-          .handleInstagramComment(channel.id, comment)
-          .catch((err) =>
-            this.logger.error(
-              `AutomationEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
-            ),
-          );
+        // Os motores escrevem via PrismaService (RLS) → precisam do contexto
+        // de tenant. Sem isso o RLS bloqueia e o comment→DM nunca dispara.
+        const orgId = channel.organizationId;
+        void runWithTenant(orgId, async () => {
+          await this.bpmnEngine
+            .handleTrigger({
+              type: 'IG_COMMENT',
+              channelId: channel.id,
+              organizationId: orgId,
+              externalEventId: comment.externalCommentId,
+              externalCommentId: comment.externalCommentId,
+              text: comment.text ?? '',
+              postId: (comment as any).postId,
+              username: comment.contactUsername ?? '',
+            })
+            .catch((err) =>
+              this.logger.error(
+                `BpmnEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
+              ),
+            );
+          await this.automationEngine
+            .handleInstagramComment(channel.id, comment)
+            .catch((err) =>
+              this.logger.error(
+                `AutomationEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
+              ),
+            );
+        });
       }
     }
 
