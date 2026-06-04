@@ -22,6 +22,10 @@ export class LlmService {
   private readonly client: OpenAI;
   private readonly apiKey: string;
   private readonly isOpenRouter: boolean;
+  // Hardening de confiabilidade do provedor (Fase 2.5): timeout por chamada
+  // (o default do SDK é 600s — parece pendurar) e modelo de fallback opcional.
+  private readonly timeoutMs: number;
+  private readonly fallbackModel: string;
 
   constructor(config: ConfigService) {
     const apiKey = config.get<string>('OPENROUTER_API_KEY');
@@ -33,6 +37,8 @@ export class LlmService {
     this.apiKey = apiKey ?? '';
     const baseURL = config.get<string>('LLM_BASE_URL') ?? 'https://openrouter.ai/api/v1';
     this.isOpenRouter = baseURL.includes('openrouter.ai');
+    this.timeoutMs = Number(config.get<string>('LLM_TIMEOUT_MS')) || 60000;
+    this.fallbackModel = config.get<string>('LLM_FALLBACK_MODEL') ?? '';
     this.client = new OpenAI({
       apiKey: apiKey ?? 'missing',
       baseURL,
@@ -94,18 +100,53 @@ export class LlmService {
       : undefined;
 
     let response: any;
+    // Timeout por chamada + 1 retry interno do SDK (429/5xx/timeout). Se o
+    // primário falhar de forma transiente e houver fallback configurado,
+    // tenta o fallback antes de desistir — evita conversa pendurada quando o
+    // provedor (ex.: OpenRouter) trava uma chamada.
+    const createWith = (modelId: string) =>
+      this.client.chat.completions.create(
+        {
+          model: modelId,
+          messages,
+          tools,
+          temperature: req.temperature ?? 0.7,
+          max_tokens: req.maxTokens ?? 2048,
+          stream: false,
+          ...(req.modelParams ?? {}),
+          ...(this.isOpenRouter ? { usage: { include: true } } : {}),
+        } as any,
+        { timeout: this.timeoutMs, maxRetries: 1 },
+      );
+    const isTransient = (e: any): boolean => {
+      const s = e?.status ?? e?.response?.status;
+      return (
+        !s ||
+        s === 408 ||
+        s === 409 ||
+        s === 429 ||
+        s >= 500 ||
+        /timeout|timed out|ECONN|socket|aborted/i.test(e?.message ?? '')
+      );
+    };
     try {
-      response = await this.client.chat.completions.create({
-        model: req.modelId,
-        messages,
-        tools,
-        temperature: req.temperature ?? 0.7,
-        max_tokens: req.maxTokens ?? 2048,
-        stream: false,
-        ...(req.modelParams ?? {}),
-        // OpenRouter returns cost when this is set. Outros providers (Groq, etc) rejeitam.
-        ...(this.isOpenRouter ? { usage: { include: true } } : {}),
-      } as any);
+      try {
+        response = await createWith(req.modelId);
+      } catch (primaryErr: any) {
+        if (
+          this.fallbackModel &&
+          this.fallbackModel !== req.modelId &&
+          isTransient(primaryErr)
+        ) {
+          const ps = primaryErr?.status ?? primaryErr?.response?.status;
+          this.logger.warn(
+            `LLM primário ${req.modelId} falhou (status=${ps ?? 'timeout'}); usando fallback ${this.fallbackModel}`,
+          );
+          response = await createWith(this.fallbackModel);
+        } else {
+          throw primaryErr;
+        }
+      }
     } catch (err: any) {
       const status = err?.status ?? err?.response?.status;
       const detail = extractProviderErrorDetail(err);

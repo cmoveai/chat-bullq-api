@@ -24,6 +24,15 @@ export class ListAvailableAgentsTool implements AiTool {
     _input: Record<string, unknown>,
     ctx: ToolContext,
   ): Promise<ToolResult> {
+    // Isolamento por squad: um orquestrador com squad definido só enxerga (e
+    // poderá rotear para) workers do MESMO squad. Sem squad = comportamento
+    // antigo (org inteiro). Impede um orquestrador EIXXO ver workers de outra
+    // squad (ex.: CMOVE) no mesmo tenant.
+    const caller = await this.prisma.aiAgent.findUnique({
+      where: { id: ctx.agentId },
+      select: { squad: true },
+    });
+
     const workers = await this.prisma.aiAgent.findMany({
       where: {
         organizationId: ctx.organizationId,
@@ -31,6 +40,7 @@ export class ListAvailableAgentsTool implements AiTool {
         isActive: true,
         deletedAt: null,
         id: { not: ctx.agentId },
+        ...(caller?.squad ? { squad: caller.squad } : {}),
       },
       select: {
         id: true,
