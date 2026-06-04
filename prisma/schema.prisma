@@ -890,6 +890,11 @@ model AiAgent {
   category     String?
   capabilities String[]    @default([])
 
+  // Hard gating de tools por agente (Fase 2.5). VAZIO = sem restrição (usa o
+  // escopo por kind, retrocompatível). NÃO-VAZIO = o agente só enxerga e só
+  // pode executar os built-ins desta lista (filtro real no runner, não só prompt).
+  allowedTools String[]    @default([]) @map("allowed_tools")
+
   // ─── Organograma matricial ágil ────────────────────────────
   // parentAgentId: chefia direta — quem este agent reporta. Null = raiz (CEO/diretoria).
   // department: setor (VENDAS, SUPORTE, CS, CONTABIL, JURIDICO, FINANCEIRO, OPERACOES, ...).
