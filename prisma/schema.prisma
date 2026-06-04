@@ -200,6 +200,7 @@ model Organization {
   cardStageHistory CardStageHistory[]
   sdrActionLog  SdrActionLog[]
   followupExecutions FollowupExecution[]
+  chatbotFlowExecutions ChatbotFlowExecution[]
   products      Product[]
   supportTickets SupportTicket[]
   subscription  Subscription?
@@ -703,6 +704,28 @@ model ChatbotFlowChannel {
 
   @@id([flowId, channelId])
   @@map("chatbot_flow_channels")
+}
+
+/// Log mínimo de execução de chatbot flow (Fase 3 Flow Builder). Uma linha por
+/// passo relevante (início do flow, ação de CRM, erro). Auditoria multi-tenant
+/// complementar à sessão (que vive só no Redis). RLS tenant_isolation.
+model ChatbotFlowExecution {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  flowId         String   @map("flow_id")
+  conversationId String   @map("conversation_id")
+  currentNode    String?  @map("current_node")
+  action         String?
+  status         String   @default("ok") // started | ok | error | ended
+  error          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([flowId, createdAt])
+  @@index([conversationId, createdAt])
+  @@map("chatbot_flow_executions")
 }
 
 // ─── Quick Replies ───────────────────────────────

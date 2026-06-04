@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { InstagramHttpClient } from '../channel-hub/adapters/instagram/instagram.http-client';
 import { PipelinesService } from '../pipelines/pipelines.service';
+import { ChatbotEngineService } from '../chatbot/engine/chatbot-engine.service';
 
 /**
  * Executor BPMN · lê config.nodes/edges salvos pelo construtor visual e
@@ -115,6 +116,7 @@ export class BpmnEngine {
     private readonly prisma: PrismaService,
     private readonly instagramHttp: InstagramHttpClient,
     private readonly pipelines: PipelinesService,
+    private readonly chatbotEngine: ChatbotEngineService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
@@ -402,6 +404,45 @@ export class BpmnEngine {
         ctx.event.channelId,
         message,
       );
+      return;
+    }
+
+    // ─── START_FLOW (Fase 3) · ponte automation → chatbot_flow. Inicia um
+    //     diálogo multi-turno específico na conversa do evento. Requer um
+    //     evento com conversa (IG_DM/WA_MESSAGE). NÃO envia nada implícito:
+    //     o flow é que decide enviar (MESSAGE nodes). ───
+    if (subtype === 'START_FLOW') {
+      const flowId = node.data?.flowId;
+      if (!flowId) {
+        ctx.errors.push('START_FLOW sem flowId · pulando');
+        return;
+      }
+      const ev = ctx.event as any;
+      const conversationId: string | undefined = ev.conversationId;
+      const channelId: string | undefined = ev.channelId;
+      if (!conversationId || !channelId) {
+        ctx.errors.push('START_FLOW exige evento com conversa/canal · pulando');
+        return;
+      }
+      const result = await this.chatbotEngine.startFlow(
+        conversationId,
+        channelId,
+        flowId,
+        ev.externalContactId ?? '',
+      );
+      // Enfileira as mensagens iniciais do flow (best-effort, omnichannel).
+      const contactId: string | undefined = ev.contactId;
+      if (contactId) {
+        for (const m of result.messages ?? []) {
+          const text =
+            m?.type === 'TEXT' ? (m.content as any)?.text : undefined;
+          if (typeof text === 'string' && text.trim()) {
+            await this.enqueueOutboundText(ctx, contactId, channelId, text).catch(
+              (e) => ctx.errors.push(`START_FLOW envio gated/skipped: ${e.message}`),
+            );
+          }
+        }
+      }
       return;
     }
 

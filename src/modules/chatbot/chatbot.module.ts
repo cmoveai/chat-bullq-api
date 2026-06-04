@@ -12,9 +12,11 @@ import { ConditionNodeExecutor } from './engine/node-executors/condition-node.ex
 import { WaitNodeExecutor } from './engine/node-executors/wait-node.executor';
 import { TransferNodeExecutor } from './engine/node-executors/transfer-node.executor';
 import { ActionNodeExecutor } from './engine/node-executors/action-node.executor';
+import { PipelinesModule } from '../pipelines/pipelines.module';
 
 @Module({
   imports: [
+    PipelinesModule,
     BullModule.registerQueue(
       { name: 'chatbot-processor' },
       { name: 'outbound-messages' },
@@ -34,6 +36,11 @@ import { ActionNodeExecutor } from './engine/node-executors/action-node.executor
     TransferNodeExecutor,
     ActionNodeExecutor,
   ],
-  exports: [ChatbotFlowsService, ChatbotFlowsRepository, ChatbotSessionService],
+  exports: [
+    ChatbotFlowsService,
+    ChatbotFlowsRepository,
+    ChatbotSessionService,
+    ChatbotEngineService,
+  ],
 })
 export class ChatbotModule {}

@@ -48,6 +48,32 @@ export class ChatbotEngineService {
     this.executors.set(actionExec.nodeType, actionExec);
   }
 
+  /**
+   * Inicia um flow ESPECÍFICO numa conversa — a ponte START_FLOW disparada
+   * pelas automations. Cria a sessão para `flowId` e roda a partir do START.
+   * Retorna as mensagens a enviar (quem chama enfileira no outbound). Se já
+   * houver sessão, ela é substituída por este flow.
+   */
+  async startFlow(
+    conversationId: string,
+    channelId: string,
+    flowId: string,
+    contactExternalId: string,
+  ): Promise<EngineResult> {
+    const flow = await this.flowsRepo.findById(flowId);
+    if (!flow || flow.deletedAt || !flow.isActive || !flow.nodes.length) {
+      return { messages: [], transferToHuman: false, sessionEnded: true };
+    }
+    const startNode = flow.nodes.find((n) => n.type === 'START') || flow.nodes[0];
+    let firstId = startNode.id;
+    if (startNode.type === 'START') {
+      const edges = startNode.edges as any[];
+      firstId = edges?.[0]?.targetNodeId || startNode.id;
+    }
+    await this.sessionService.create(conversationId, flow.id, firstId);
+    return this.processMessage(conversationId, channelId, contactExternalId, '');
+  }
+
   async processMessage(
     conversationId: string,
     channelId: string,

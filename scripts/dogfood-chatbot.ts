@@ -148,7 +148,7 @@ async function main() {
     new ConditionNodeExecutor(),
     new WaitNodeExecutor(),
     new TransferNodeExecutor(),
-    new ActionNodeExecutor(prisma as any),
+    new ActionNodeExecutor(prisma as any, null as any),
   );
 
   const conv = `dogfood-${Date.now()}`;
