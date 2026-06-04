@@ -21,6 +21,19 @@ import { DEFAULT_PIPELINE_STAGES } from './pipeline-defaults';
 // pipeline-defaults.ts (reusado pelo provisionamento automático no signup).
 const DEFAULT_STAGES: UpsertStageDto[] = DEFAULT_PIPELINE_STAGES;
 
+/**
+ * Quem está movendo o card. Toda movimentação passa por moveCard() e grava
+ * em card_stage_history (Fase 2.5). Quando type='AGENT' (SDR), reason é
+ * obrigatório — o SDR nunca move sem motivo/contexto.
+ */
+export interface CardMover {
+  type: 'USER' | 'AGENT' | 'SYSTEM';
+  userId?: string | null;
+  agentId?: string | null;
+  reason?: string | null;
+  context?: Record<string, any>;
+}
+
 @Injectable()
 export class PipelinesService {
   constructor(
@@ -488,6 +501,7 @@ export class PipelinesService {
     cardId: string,
     organizationId: string,
     dto: MoveCardDto,
+    mover: CardMover = { type: 'USER' },
   ) {
     const card = await this.prisma.card.findUnique({ where: { id: cardId } });
     if (!card || card.organizationId !== organizationId) {
@@ -516,6 +530,23 @@ export class PipelinesService {
       newStatus = CardStatus.OPEN;
       newClosedAt = null;
     }
+
+    const stageChanged = !sameStage;
+    const statusChanged = newStatus !== card.status;
+    const reason = mover.reason?.trim() || null;
+
+    // Condição de segurança Fase 2.5: o SDR (AGENT) nunca move sem motivo.
+    if ((stageChanged || statusChanged) && mover.type === 'AGENT' && !reason) {
+      throw new BadRequestException(
+        'SDR não pode mover card sem registrar motivo/contexto',
+      );
+    }
+
+    // Ganho/perda: se houver motivo no movimento, persiste em closedReason
+    // (rastreabilidade); senão preserva o que já estava.
+    const closingStatus = newStatus === 'WON' || newStatus === 'LOST';
+    const newClosedReason =
+      statusChanged && closingStatus && reason ? reason : card.closedReason;
 
     await this.prisma.$transaction(async (tx) => {
       if (sameStage) {
@@ -568,8 +599,30 @@ export class PipelinesService {
           order: dto.toIndex,
           status: newStatus,
           closedAt: newClosedAt,
+          closedReason: newClosedReason,
         },
       });
+
+      // Trilha de auditoria · grava em TODA mudança de stage ou status.
+      // Reorder puro (mesma coluna, status inalterado) não gera histórico.
+      if (stageChanged || statusChanged) {
+        await tx.cardStageHistory.create({
+          data: {
+            organizationId,
+            cardId,
+            pipelineId: card.pipelineId,
+            fromStageId,
+            toStageId: dto.toStageId,
+            fromStatus: card.status,
+            toStatus: newStatus,
+            movedByType: mover.type,
+            movedByUserId: mover.userId ?? null,
+            movedByAgentId: mover.agentId ?? null,
+            reason,
+            context: (mover.context ?? {}) as Prisma.InputJsonValue,
+          },
+        });
+      }
     });
 
     this.realtime.emitToOrg(organizationId, 'card:moved', {

@@ -197,6 +197,7 @@ model Organization {
   inboxViews    InboxView[]
   pipelines     Pipeline[]
   cards         Card[]
+  cardStageHistory CardStageHistory[]
   products      Product[]
   supportTickets SupportTicket[]
   subscription  Subscription?
@@ -1327,6 +1328,17 @@ model Card {
   closedAt     DateTime? @map("closed_at")
   closedReason String?   @map("closed_reason")
 
+  // ─── SDR / qualificação comercial (Fase 2.5) ───
+  // qualificationStatus é TEXT (não enum) de propósito: evita ALTER TYPE em
+  // migração e deixa o vocabulário evoluir sem migração. Valores canônicos:
+  // NEW | QUALIFYING | QUALIFIED | DISQUALIFIED.
+  leadScore           Int       @default(0) @map("lead_score")
+  qualificationStatus String?   @map("qualification_status")
+  qualifiedAt         DateTime? @map("qualified_at")
+  lastFollowupAt      DateTime? @map("last_followup_at")
+  nextFollowupAt      DateTime? @map("next_followup_at")
+  sdrAgentId          String?   @map("sdr_agent_id")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1338,12 +1350,42 @@ model Card {
   assignedTo   User?         @relation("CardAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   cobrancas    Cobranca[]
   tasks        Task[]
+  stageHistory CardStageHistory[]
 
   @@index([pipelineId, stageId, order])
   @@index([organizationId, status])
   @@index([contactId])
   @@index([conversationId])
+  @@index([organizationId, nextFollowupAt])
   @@map("cards")
+}
+
+/// Trilha de auditoria de TODA movimentação de stage/status de um card.
+/// Gravada pelo único chokepoint seguro (PipelinesService.moveCard). Quando o
+/// movedor é AGENT (SDR), `reason` é obrigatório. Dá rastreabilidade de
+/// ganho/perda e de cada passo no funil (condições de segurança Fase 2.5).
+model CardStageHistory {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  cardId         String   @map("card_id")
+  pipelineId     String   @map("pipeline_id")
+  fromStageId    String?  @map("from_stage_id")
+  toStageId      String   @map("to_stage_id")
+  fromStatus     String?  @map("from_status")
+  toStatus       String   @map("to_status")
+  movedByType    String   @map("moved_by_type") // USER | AGENT | SYSTEM
+  movedByUserId  String?  @map("moved_by_user_id")
+  movedByAgentId String?  @map("moved_by_agent_id")
+  reason         String?
+  context        Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("card_stage_history")
 }
 
 // ─── Product Catalog ─────────────────────────────

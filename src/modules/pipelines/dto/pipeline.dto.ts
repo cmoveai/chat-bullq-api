@@ -174,4 +174,10 @@ export class MoveCardDto {
   @IsInt()
   @Min(0)
   toIndex!: number;
+
+  // Opcional para movimentação humana; recomendado em ganho/perda para
+  // rastreabilidade. Obrigatório quando quem move é o SDR (agente).
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }
