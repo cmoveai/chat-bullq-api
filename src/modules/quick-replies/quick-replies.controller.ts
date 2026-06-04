@@ -24,7 +24,7 @@ export class QuickRepliesController {
   constructor(private readonly service: QuickRepliesService) {}
 
   @Post()
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Create quick reply' })
   create(@CurrentOrg('id') orgId: string, @Body() dto: CreateQuickReplyDto) {
     return this.service.create(orgId, dto);
@@ -43,7 +43,7 @@ export class QuickRepliesController {
   }
 
   @Patch(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Update quick reply' })
   update(
     @Param('id') id: string,
@@ -54,7 +54,7 @@ export class QuickRepliesController {
   }
 
   @Delete(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Soft-delete quick reply' })
   remove(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.remove(id, orgId);

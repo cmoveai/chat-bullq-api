@@ -15,9 +15,9 @@ import { AiTool, ToolContext, ToolResult } from '../tool.types';
  * x-admin-api-key + x-tenant-id headers (same pattern admin-actions).
  *
  * Env required:
- * - MEMBERS_TRIVAPP_URL (default https://members.bravy.school)
+ * - MEMBERS_TRIVAPP_URL (configurável via env)
  * - MEMBERS_ADMIN_KEY
- * - MEMBERS_TENANT_BRAVY (TODO: per-org mapping when multi-tenant)
+ * - MEMBERS_TENANT_ID (TODO: per-org mapping when multi-tenant)
  */
 @Injectable()
 export class GetProductPitchTool implements AiTool {
@@ -59,12 +59,12 @@ export class GetProductPitchTool implements AiTool {
 
     const baseUrl =
       this.config.get<string>('MEMBERS_TRIVAPP_URL') ??
-      'https://members.bravy.school';
+      '';
     const apiKey = this.config.get<string>('MEMBERS_ADMIN_KEY');
-    const tenantId = this.config.get<string>('MEMBERS_TENANT_BRAVY');
+    const tenantId = this.config.get<string>('MEMBERS_TENANT_ID');
 
     if (!apiKey || !tenantId) {
-      // Trivapp (catálogo externo do JP) não configurado nesta instância.
+      // Trivapp (catálogo externo de membros) não configurado nesta instância.
       // Em vez de devolver erro técnico que o agente repassa pro cliente,
       // devolve um fallback gracioso: o agente usa o CATÁLOGO inline do
       // próprio system_prompt ou escala pra humano. Cliente nunca vê

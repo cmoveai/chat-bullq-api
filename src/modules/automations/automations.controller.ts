@@ -49,7 +49,7 @@ export class AutomationsController {
   }
 
   @Post()
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Create automation' })
   create(
     @CurrentOrg('id') orgId: string,
@@ -59,7 +59,7 @@ export class AutomationsController {
   }
 
   @Patch(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Update automation' })
   update(
     @Param('id') id: string,
@@ -70,7 +70,7 @@ export class AutomationsController {
   }
 
   @Delete(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Soft-delete automation' })
   remove(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.remove(id, orgId);

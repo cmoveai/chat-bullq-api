@@ -165,16 +165,14 @@ export class SkillsCatalogService {
         throw new BadRequestException('Algum skillId não pertence à org.');
       }
     }
-    await this.prisma.$transaction([
-      this.prisma.aiAgentSkill.deleteMany({ where: { agentId } }),
-      ...(skillIds.length > 0
-        ? [
-            this.prisma.aiAgentSkill.createMany({
-              data: skillIds.map((skillId) => ({ agentId, skillId })),
-            }),
-          ]
-        : []),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.aiAgentSkill.deleteMany({ where: { agentId } });
+      if (skillIds.length > 0) {
+        await tx.aiAgentSkill.createMany({
+          data: skillIds.map((skillId) => ({ agentId, skillId })),
+        });
+      }
+    });
   }
 
   // ─── helpers ────────────────────────────────────────────────────

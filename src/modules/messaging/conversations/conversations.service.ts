@@ -493,15 +493,15 @@ export class ConversationsService {
         : {}),
     };
     const [total, resolved, active, humanControlled] =
-      await this.prisma.$transaction([
-        this.prisma.conversation.count({ where: baseWhere }),
-        this.prisma.conversation.count({
+      await this.prisma.$transaction(async (tx) => [
+        await tx.conversation.count({ where: baseWhere }),
+        await tx.conversation.count({
           where: { ...baseWhere, status: 'CLOSED' },
         }),
-        this.prisma.conversation.count({
+        await tx.conversation.count({
           where: { ...baseWhere, status: { in: ['OPEN', 'WAITING'] } },
         }),
-        this.prisma.conversation.count({
+        await tx.conversation.count({
           where: { ...baseWhere, assignedToId: { not: null } },
         }),
       ]);

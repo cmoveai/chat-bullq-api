@@ -7,6 +7,7 @@ import {
   MessageStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../../../database/prisma.service';
+import { runWithTenant } from '../../../../database/tenant-context';
 import { RealtimeGateway } from '../../../realtime/realtime.gateway';
 
 interface ReminderJobData {
@@ -32,6 +33,10 @@ export class ScheduledReminderProcessor extends WorkerHost {
   }
 
   async process(job: Job<ReminderJobData>): Promise<{ messageId: string }> {
+    return runWithTenant(job.data.organizationId, () => this.handle(job));
+  }
+
+  private async handle(job: Job<ReminderJobData>): Promise<{ messageId: string }> {
     const data = job.data;
 
     const [agent, contactChannel, conversation] = await Promise.all([

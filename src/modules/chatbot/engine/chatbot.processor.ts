@@ -4,6 +4,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { ConversationStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { runWithTenant } from '../../../database/tenant-context';
 import { ChatbotEngineService } from './chatbot-engine.service';
 
 interface ChatbotJobData {
@@ -27,6 +28,10 @@ export class ChatbotProcessor extends WorkerHost {
   }
 
   async process(job: Job<ChatbotJobData>): Promise<any> {
+    return runWithTenant(job.data.organizationId, () => this.handle(job));
+  }
+
+  private async handle(job: Job<ChatbotJobData>): Promise<any> {
     const { conversationId, channelId, contactExternalId, organizationId, messageText } = job.data;
 
     const result = await this.engine.processMessage(

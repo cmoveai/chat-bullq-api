@@ -13,6 +13,7 @@ enum OrgRole {
   OWNER
   ADMIN
   AGENT
+  PARTNER
 }
 
 enum GlobalRole {
@@ -196,6 +197,8 @@ model Organization {
   inboxViews    InboxView[]
   pipelines     Pipeline[]
   cards         Card[]
+  cardStageHistory CardStageHistory[]
+  sdrActionLog  SdrActionLog[]
   products      Product[]
   supportTickets SupportTicket[]
   subscription  Subscription?
@@ -204,6 +207,7 @@ model Organization {
   tasks         Task[]
   automations   Automation[]
   knowledgeBases KnowledgeBase[]
+  socialInteractions SocialInteraction[]
 
   @@map("organizations")
 }
@@ -283,6 +287,7 @@ model Channel {
   syncJobs        ChannelSyncJob[]
   channelAgents   ChannelAgent[]
   aiAgentChannels AiAgentChannel[]
+  socialInteractions SocialInteraction[]
   automations     Automation[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
@@ -385,16 +390,41 @@ model Contact {
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
 
+  // Atribuição / origem do lead — omnichannel (Fase 1). Agnóstico de canal.
+  sourceType           String? @map("source_type")            // instagram_dm | instagram_comment | instagram_story_reply | instagram_mention | click_to_instagram_dm | whatsapp | click_to_whatsapp | landing_page | webchat
+  sourceChannel        String? @map("source_channel")         // channel.type de origem
+  externalUserId       String? @map("external_user_id")       // id do usuário na plataforma de origem (IG user id, wa id...)
+  campaignId           String? @map("campaign_id")
+  campaignName         String? @map("campaign_name")
+  adId                 String? @map("ad_id")
+  adName               String? @map("ad_name")
+  adsetId              String? @map("adset_id")
+  adsetName            String? @map("adset_name")
+  utmSource            String? @map("utm_source")
+  utmMedium            String? @map("utm_medium")
+  utmCampaign          String? @map("utm_campaign")
+  utmContent           String? @map("utm_content")
+  utmTerm              String? @map("utm_term")
+  fbclid               String?
+  fbp                  String?
+  fbc                  String?
+  firstMessage         String? @map("first_message")
+  firstInteractionType String? @map("first_interaction_type")
+  referralSource       String? @map("referral_source")
+
   organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   channels      ContactChannel[]
   conversations Conversation[]
   tags          ContactTag[]
   aiMemories    AiAgentMemory[]
+  socialInteractions SocialInteraction[]
   cards         Card[]           @relation("CardContact")
   tasks         Task[]
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
+  @@index([organizationId, sourceType], name: "idx_contact_org_source")
+  @@index([organizationId, campaignId], name: "idx_contact_org_campaign")
   @@map("contacts")
 }
 
@@ -469,6 +499,7 @@ model Conversation {
   aiRuns        AiAgentRun[]
   aiHandoffs    AiAgentHandoff[]
   reads         ConversationRead[]
+  socialInteractions SocialInteraction[]
   cards         Card[]                 @relation("CardConversation")
   tasks         Task[]
 
@@ -541,6 +572,7 @@ model Message {
   status         MessageStatus      @default(QUEUED)
   senderName     String?            @map("sender_name")
   senderId       String?            @map("sender_id")
+  source         String?            // omnichannel: instagram_dm | instagram_comment | instagram_story_reply | instagram_mention | whatsapp | webchat | ad_ctwa | ad_ctig (TEXT, não enum — novos canais sem migration)
   sentAt         DateTime?          @map("sent_at")
   deliveredAt    DateTime?          @map("delivered_at")
   readAt         DateTime?          @map("read_at")
@@ -555,6 +587,36 @@ model Message {
   @@index([conversationId, createdAt], name: "idx_msg_conv_time")
   @@index([externalId], name: "idx_msg_external_id")
   @@map("messages")
+}
+
+// Interações sociais genéricas (omnichannel · Fase 1): comentários, menções,
+// respostas de story, reações — qualquer canal. NÃO é InstagramComment.
+model SocialInteraction {
+  id                    String   @id @default(cuid())
+  organizationId        String   @map("organization_id")
+  channelId             String   @map("channel_id")
+  contactId             String?  @map("contact_id")
+  conversationId        String?  @map("conversation_id")
+  interactionType       String   @map("interaction_type") // COMMENT | MENTION | STORY_REPLY | REACTION
+  externalInteractionId String   @map("external_interaction_id") // idempotência
+  mediaId               String?  @map("media_id")
+  parentId              String?  @map("parent_id")
+  fromUsername          String?  @map("from_username")
+  text                  String?
+  matchedKeyword        String?  @map("matched_keyword")
+  automationTriggered   Boolean  @default(false) @map("automation_triggered")
+  rawPayload            Json     @default("{}") @map("raw_payload")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@unique([channelId, externalInteractionId], name: "uq_social_channel_ext")
+  @@index([organizationId, interactionType], name: "idx_social_org_type")
+  @@index([organizationId, contactId], name: "idx_social_org_contact")
+  @@map("social_interactions")
 }
 
 // ─── Departments / Routing ───────────────────────
@@ -827,6 +889,11 @@ model AiAgent {
   kind         AiAgentKind @default(WORKER)
   category     String?
   capabilities String[]    @default([])
+
+  // Hard gating de tools por agente (Fase 2.5). VAZIO = sem restrição (usa o
+  // escopo por kind, retrocompatível). NÃO-VAZIO = o agente só enxerga e só
+  // pode executar os built-ins desta lista (filtro real no runner, não só prompt).
+  allowedTools String[]    @default([]) @map("allowed_tools")
 
   // ─── Organograma matricial ágil ────────────────────────────
   // parentAgentId: chefia direta — quem este agent reporta. Null = raiz (CEO/diretoria).
@@ -1267,6 +1334,17 @@ model Card {
   closedAt     DateTime? @map("closed_at")
   closedReason String?   @map("closed_reason")
 
+  // ─── SDR / qualificação comercial (Fase 2.5) ───
+  // qualificationStatus é TEXT (não enum) de propósito: evita ALTER TYPE em
+  // migração e deixa o vocabulário evoluir sem migração. Valores canônicos:
+  // NEW | QUALIFYING | QUALIFIED | DISQUALIFIED.
+  leadScore           Int       @default(0) @map("lead_score")
+  qualificationStatus String?   @map("qualification_status")
+  qualifiedAt         DateTime? @map("qualified_at")
+  lastFollowupAt      DateTime? @map("last_followup_at")
+  nextFollowupAt      DateTime? @map("next_followup_at")
+  sdrAgentId          String?   @map("sdr_agent_id")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1278,12 +1356,67 @@ model Card {
   assignedTo   User?         @relation("CardAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   cobrancas    Cobranca[]
   tasks        Task[]
+  stageHistory CardStageHistory[]
 
   @@index([pipelineId, stageId, order])
   @@index([organizationId, status])
   @@index([contactId])
   @@index([conversationId])
+  @@index([organizationId, nextFollowupAt])
   @@map("cards")
+}
+
+/// Trilha de auditoria de TODA movimentação de stage/status de um card.
+/// Gravada pelo único chokepoint seguro (PipelinesService.moveCard). Quando o
+/// movedor é AGENT (SDR), `reason` é obrigatório. Dá rastreabilidade de
+/// ganho/perda e de cada passo no funil (condições de segurança Fase 2.5).
+model CardStageHistory {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  cardId         String   @map("card_id")
+  pipelineId     String   @map("pipeline_id")
+  fromStageId    String?  @map("from_stage_id")
+  toStageId      String   @map("to_stage_id")
+  fromStatus     String?  @map("from_status")
+  toStatus       String   @map("to_status")
+  movedByType    String   @map("moved_by_type") // USER | AGENT | SYSTEM
+  movedByUserId  String?  @map("moved_by_user_id")
+  movedByAgentId String?  @map("moved_by_agent_id")
+  reason         String?
+  context        Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("card_stage_history")
+}
+
+/// Log de auditoria das ações do SDR (agente IA) — uma linha por tool
+/// executada. Complementa card_stage_history (que é a timeline do card):
+/// aqui fica "o que o agente decidiu/fez", com motivo, contexto e before/after.
+/// Toda ação do SDR grava aqui (condição de segurança Fase 2.5).
+model SdrActionLog {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  agentId        String?  @map("agent_id")
+  cardId         String?  @map("card_id")
+  conversationId String?  @map("conversation_id")
+  actionType     String   @map("action_type")
+  reason         String?
+  context        Json     @default("{}")
+  before         Json?
+  after          Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([cardId, createdAt])
+  @@index([agentId, createdAt])
+  @@map("sdr_action_log")
 }
 
 // ─── Product Catalog ─────────────────────────────

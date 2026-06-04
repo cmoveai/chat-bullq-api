@@ -2,6 +2,7 @@ import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
 import { PrismaService } from '../../../database/prisma.service';
+import { runWithTenant, runAsSystem } from '../../../database/tenant-context';
 import { IdempotencyService } from './idempotency.service';
 import { ContactResolverService } from './contact-resolver.service';
 import { ConversationResolverService } from './conversation-resolver.service';
@@ -92,6 +93,13 @@ export class InboundMessageProcessor extends WorkerHost {
   }
 
   async process(job: Job<InboundJobData | StatusJobData>): Promise<any> {
+    const org = job.data.organizationId;
+    return org
+      ? runWithTenant(org, () => this.handle(job))
+      : runAsSystem(() => this.handle(job));
+  }
+
+  private async handle(job: Job<InboundJobData | StatusJobData>): Promise<any> {
     if (job.name === 'process-status') {
       return this.processStatus(job.data as StatusJobData);
     }
@@ -115,6 +123,21 @@ export class InboundMessageProcessor extends WorkerHost {
 
       const { contactId, isNew: isNewContact } =
         await this.contactResolver.resolve(organizationId, channelId, message);
+
+      // Atribuição/origem do lead (Fase 1 omnichannel) — só em contato NOVO,
+      // pra não sobrescrever a origem do primeiro contato. Best-effort.
+      if (isNewContact) {
+        await this.prisma.contact
+          .update({
+            where: { id: contactId },
+            data: this.buildAttribution(message),
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `Atribuição falhou p/ contato ${contactId}: ${err.message}`,
+            ),
+          );
+      }
 
       if (message.channelType === ChannelType.INSTAGRAM) {
         const [channel, contact] = await Promise.all([
@@ -227,24 +250,49 @@ export class InboundMessageProcessor extends WorkerHost {
         );
       }
 
-      // BPMN flows · WhatsApp inbound (não-echo) dispara trigger WA_MESSAGE.
-      // Best-effort · não bloqueia pipeline mesmo se falhar.
-      if (!isEcho && message.channelType !== ChannelType.INSTAGRAM) {
+      // BPMN flows · inbound (não-echo) dispara o motor. Instagram → IG_DM,
+      // WhatsApp → WA_MESSAGE. Best-effort · não bloqueia o pipeline se falhar.
+      // Só roda se a org tiver uma automation ativa escutando esse trigger
+      // (opt-in), então não conflita com a IA/chatbot por padrão.
+      if (!isEcho) {
         const textContent = (message.content as any)?.text ?? '';
-        this.bpmnEngine
-          .handleTrigger({
-            type: 'WA_MESSAGE',
-            channelId,
-            organizationId,
-            contactId,
-            externalEventId: message.externalMessageId,
-            text: typeof textContent === 'string' ? textContent : String(textContent ?? ''),
-          })
-          .catch((err) =>
-            this.logger.warn(
-              `BpmnEngine WA_MESSAGE failed for ${message.externalMessageId}: ${err.message}`,
-            ),
-          );
+        const text =
+          typeof textContent === 'string' ? textContent : String(textContent ?? '');
+        if (message.channelType === ChannelType.INSTAGRAM) {
+          this.bpmnEngine
+            .handleTrigger({
+              type: 'IG_DM',
+              channelId,
+              organizationId,
+              contactId,
+              conversationId,
+              externalEventId: message.externalMessageId,
+              externalContactId: message.externalContactId,
+              text,
+              username:
+                message.senderName ?? message.contactName ?? undefined,
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `BpmnEngine IG_DM failed for ${message.externalMessageId}: ${err.message}`,
+              ),
+            );
+        } else {
+          this.bpmnEngine
+            .handleTrigger({
+              type: 'WA_MESSAGE',
+              channelId,
+              organizationId,
+              contactId,
+              externalEventId: message.externalMessageId,
+              text,
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `BpmnEngine WA_MESSAGE failed for ${message.externalMessageId}: ${err.message}`,
+              ),
+            );
+        }
       }
 
       this.realtimeGateway.emitToChannel(channelId, 'message:new', {
@@ -255,6 +303,11 @@ export class InboundMessageProcessor extends WorkerHost {
       this.realtimeGateway.emitToConversation(conversationId, 'message:new', {
         message: savedMessage,
       });
+
+      // Quando o flow scriptado (chatbot) assume a mensagem, ele tem
+      // precedência sobre o AI agent — senão os dois respondem na mesma
+      // conversa (lead vê resposta dobrada).
+      let routedToChatbot = false;
 
       if (
         !isEcho &&
@@ -289,6 +342,7 @@ export class InboundMessageProcessor extends WorkerHost {
               removeOnFail: false,
             },
           );
+          routedToChatbot = true;
           this.logger.log(`Routed to chatbot: conv=${conversationId}`);
         }
       }
@@ -306,7 +360,7 @@ export class InboundMessageProcessor extends WorkerHost {
       // instead of seeing "[audio]" and apologizing it can't listen. Cost
       // is ~$0.006/min — predictable and pays for itself the moment the
       // bot answers a single audio without bouncing the customer to text.
-      if (!isEcho) {
+      if (!isEcho && !routedToChatbot) {
         const dispatch = async () => {
           // Transcrição de áudio desabilitada temporariamente · OPENAI_API_KEY
           // do .env é OpenRouter (sk-or-v1-*) e Whisper só funciona com chave
@@ -351,6 +405,41 @@ export class InboundMessageProcessor extends WorkerHost {
         .catch(() => undefined);
       throw err;
     }
+  }
+
+  /** Deriva a origem (source) da mensagem — omnichannel, do canal + payload. */
+  private deriveSource(message: NormalizedInboundMessage): string {
+    const c = (message.content as any) || {};
+    switch (message.channelType) {
+      case ChannelType.INSTAGRAM:
+        if (c.ad) return 'ad_ctig';
+        if (c.story?.kind === 'mention') return 'instagram_mention';
+        if (c.story?.kind === 'reply') return 'instagram_story_reply';
+        return 'instagram_dm';
+      case ChannelType.WHATSAPP_OFFICIAL:
+      case ChannelType.WHATSAPP_ZAPI:
+      case ChannelType.WHATSAPP_ZAPPFY:
+        return c.ad ? 'ad_ctwa' : 'whatsapp';
+      default:
+        return String(message.channelType).toLowerCase();
+    }
+  }
+
+  /** Campos de atribuição/origem do lead a partir do payload (Fase 1 omnichannel). */
+  private buildAttribution(message: NormalizedInboundMessage): Record<string, any> {
+    const c = (message.content as any) || {};
+    const source = this.deriveSource(message);
+    const attr: Record<string, any> = {
+      sourceType: source,
+      sourceChannel: String(message.channelType).toLowerCase(),
+      externalUserId: message.externalContactId ?? null,
+      firstInteractionType: source,
+    };
+    if (c.ad?.id) {
+      attr.adId = String(c.ad.id);
+      if (c.ad.title) attr.adName = String(c.ad.title);
+    }
+    return attr;
   }
 
   /**
@@ -403,6 +492,7 @@ export class InboundMessageProcessor extends WorkerHost {
           type: message.type as unknown as PrismaContentType,
           content: message.content as any,
           externalId: message.externalMessageId || null,
+          source: this.deriveSource(message),
           status: isEcho ? MessageStatus.SENT : MessageStatus.DELIVERED,
           senderName: message.senderName || null,
           sentAt: isEcho ? new Date() : null,

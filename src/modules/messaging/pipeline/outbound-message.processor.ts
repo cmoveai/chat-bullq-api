@@ -3,6 +3,8 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { MessageStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { PrismaSystemService } from '../../../database/prisma-system.service';
+import { runWithTenant, runAsSystem } from '../../../database/tenant-context';
 import { ChannelAdapterRegistry } from '../../channel-hub/channel-adapter.registry';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { NormalizedOutboundMessage } from '../../channel-hub/ports/types';
@@ -21,6 +23,7 @@ export class OutboundMessageProcessor extends WorkerHost {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly system: PrismaSystemService,
     private readonly adapterRegistry: ChannelAdapterRegistry,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly idempotency: IdempotencyService,
@@ -29,6 +32,15 @@ export class OutboundMessageProcessor extends WorkerHost {
   }
 
   async process(job: Job<OutboundJobData>): Promise<any> {
+    const ch = await this.system.channel.findUnique({
+      where: { id: job.data.channelId },
+      select: { organizationId: true },
+    });
+    if (!ch) return runAsSystem(() => this.handle(job));
+    return runWithTenant(ch.organizationId, () => this.handle(job));
+  }
+
+  private async handle(job: Job<OutboundJobData>): Promise<any> {
     const { messageId, channelId, contactExternalId, message } = job.data;
 
     const channel = await this.prisma.channel.findUniqueOrThrow({

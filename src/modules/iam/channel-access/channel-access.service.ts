@@ -180,27 +180,25 @@ export class ChannelAccessService {
     const toAdd = channelIds.filter((id) => !existingSet.has(id));
     const toRemove = [...existingSet].filter((id) => !targetSet.has(id));
 
-    await this.prisma.$transaction([
-      ...(toRemove.length
-        ? [
-            this.prisma.channelAgent.deleteMany({
-              where: {
-                userOrganizationId: membership.id,
-                channelId: { in: toRemove },
-              },
-            }),
-          ]
-        : []),
-      ...toAdd.map((channelId) =>
-        this.prisma.channelAgent.create({
+    await this.prisma.$transaction(async (tx) => {
+      if (toRemove.length) {
+        await tx.channelAgent.deleteMany({
+          where: {
+            userOrganizationId: membership.id,
+            channelId: { in: toRemove },
+          },
+        });
+      }
+      for (const channelId of toAdd) {
+        await tx.channelAgent.create({
           data: {
             channelId,
             userOrganizationId: membership.id,
             grantedById,
           },
-        }),
-      ),
-    ]);
+        });
+      }
+    });
 
     return { added: toAdd, removed: toRemove, userId: membership.userId };
   }

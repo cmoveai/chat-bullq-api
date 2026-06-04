@@ -121,9 +121,14 @@ export class AiAgentRunnerService {
     // Custom HTTP tools live in the DB; we keep their rows here so the
     // runner can hand them to HttpToolExecutor on tool-call time.
     const { llmTools, customSkillsByName, skillInstructions } =
-      await this.resolveToolsAndSkills(agent.id, agent.kind);
+      await this.resolveToolsAndSkills(
+        agent.id,
+        agent.kind,
+        agent.allowedTools ?? [],
+      );
 
     const startedAt = Date.now();
+    const knowledgeBase = await this.loadKnowledgeBase(agent.id);
     const messages = this.promptBuilder.buildMessages({
       organization,
       agent,
@@ -137,6 +142,7 @@ export class AiAgentRunnerService {
       triggerMessage,
       skillInstructions,
       catalog,
+      knowledgeBase,
     });
 
     const tools = llmTools;
@@ -245,6 +251,7 @@ export class AiAgentRunnerService {
             triggerMessageId: triggerMessage.id,
           },
           customSkillsByName,
+          agent.allowedTools ?? [],
         );
 
         for (const result of toolResults) {
@@ -383,6 +390,7 @@ export class AiAgentRunnerService {
     calls: LlmToolCall[],
     ctx: ToolContext,
     customSkillsByName: Map<string, AiSkill & { tool: AiTool | null }>,
+    allowedTools: string[] = [],
   ): Promise<
     Array<{
       toolCallId: string;
@@ -416,6 +424,18 @@ export class AiAgentRunnerService {
         errorMessage = undefined;
         try {
           const customSkill = customSkillsByName.get(call.name);
+          // Hard gating Fase 2.5: built-in fora do allowlist do agente é
+          // recusado na execução (não basta filtrar a definição) — proteção
+          // contra alucinação de nome de tool.
+          if (
+            !customSkill &&
+            allowedTools.length > 0 &&
+            !allowedTools.includes(call.name)
+          ) {
+            throw new Error(
+              `Tool '${call.name}' não permitida para este agente (allowlist).`,
+            );
+          }
           if (customSkill && customSkill.tool) {
             const result =
               customSkill.source === 'SQL'
@@ -578,9 +598,27 @@ export class AiAgentRunnerService {
    *   customToolsByName  — DB rows for HTTP tools, used by the executor
    *   skillInstructions  — prompt fragments to append to system message
    */
+  /**
+   * Carrega o conteúdo das knowledge bases ligadas ao agente (modular: só os
+   * docs daquele agente). Fonte versionada no repo docs/knowledge-base; aqui
+   * lê o que foi seedado em knowledge_bases. Vazio = sem KB ligada.
+   */
+  private async loadKnowledgeBase(agentId: string): Promise<string | undefined> {
+    const links = await this.prisma.agentKnowledgeBase.findMany({
+      where: { agentId, knowledgeBase: { deletedAt: null } },
+      include: { knowledgeBase: { select: { name: true, content: true } } },
+      orderBy: { knowledgeBaseId: 'asc' },
+    });
+    if (!links.length) return undefined;
+    return links
+      .map((l) => `## ${l.knowledgeBase.name}\n\n${l.knowledgeBase.content}`)
+      .join('\n\n---\n\n');
+  }
+
   private async resolveToolsAndSkills(
     agentId: string,
     kind: 'ORCHESTRATOR' | 'WORKER',
+    allowedTools: string[] = [],
   ): Promise<{
     llmTools: LlmToolDefinition[];
     customSkillsByName: Map<string, AiSkill & { tool: AiTool | null }>;
@@ -618,8 +656,12 @@ export class AiAgentRunnerService {
       }
     }
 
-    // Built-in defaults — always available based on agent kind.
-    const defaultLlm = this.registry.getLlmDefinitionsForKind(kind);
+    // Built-in defaults — escopo por kind, e (hard gating Fase 2.5) filtrado
+    // pelo allowlist por agente quando definido. Vazio = sem restrição.
+    const allowSet = new Set(allowedTools);
+    const defaultLlm = this.registry
+      .getLlmDefinitionsForKind(kind)
+      .filter((t) => allowSet.size === 0 || allowSet.has(t.name));
 
     const seen = new Set<string>();
     const llmTools: LlmToolDefinition[] = [];

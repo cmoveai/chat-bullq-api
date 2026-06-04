@@ -77,14 +77,27 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
       'sha256=' +
       crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
 
+    let ok = false;
     try {
-      return crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expected),
-      );
+      ok = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
     } catch {
-      return false;
+      ok = false;
     }
+    if (ok) return true;
+
+    // Dívida técnica (2026-06-03): o Cloudflare na frente do webhook altera os
+    // bytes do corpo em trânsito, quebrando o HMAC. Provado: POST direto no
+    // origin (bypass CF) valida; via CF não. Enquanto o conserto próprio (tirar
+    // o webhook de trás do proxy CF) não é feito, com a flag ligada aceitamos a
+    // mensagem com base na resolução de canal (a WABA/phone do payload já casou
+    // um canal cadastrado, feita ANTES desta validação). Ver docs/RLS-ROLLOUT.md.
+    if (process.env.WHATSAPP_WEBHOOK_SIGNATURE_OPTIONAL === 'true') {
+      this.logger.warn(
+        `WA Official: assinatura não confere p/ canal ${channel?.id} — ACEITO via WHATSAPP_WEBHOOK_SIGNATURE_OPTIONAL (proxy CF altera o corpo; canal resolvido por WABA/phone). Dívida técnica: restaurar verificação ao tirar o webhook de trás do CF.`,
+      );
+      return true;
+    }
+    return false;
   }
 
   parseWebhook(payload: unknown, channel?: Channel): WebhookParseResult {

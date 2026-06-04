@@ -60,7 +60,7 @@ export class ChannelsController {
   }
 
   @Patch(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Update a channel' })
   update(
     @Param('id') id: string,
@@ -72,7 +72,7 @@ export class ChannelsController {
   }
 
   @Delete(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({
     summary:
       'Soft-delete a channel. Requires ?confirmName=<exact channel name>.',
@@ -86,7 +86,7 @@ export class ChannelsController {
   }
 
   @Post(':id/sync')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Sync channel — import chats, contacts, and messages from provider' })
   syncChannel(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.syncChannel(id, orgId);
@@ -99,14 +99,14 @@ export class ChannelsController {
   }
 
   @Post(':id/sync/cancel')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Cancel active sync for a channel' })
   cancelSync(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.cancelSync(id, orgId);
   }
 
   @Post(':id/test')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Test channel connection' })
   testConnection(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.testConnection(id, orgId);

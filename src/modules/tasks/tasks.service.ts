@@ -63,20 +63,20 @@ export class TasksService {
 
   async stats(organizationId: string) {
     const now = new Date();
-    const [total, todo, inProgress, done, overdue] = await this.prisma.$transaction([
-      this.prisma.task.count({
+    const [total, todo, inProgress, done, overdue] = await this.prisma.$transaction(async (tx) => [
+      await tx.task.count({
         where: { organizationId, deletedAt: null },
       }),
-      this.prisma.task.count({
+      await tx.task.count({
         where: { organizationId, deletedAt: null, status: 'TODO' },
       }),
-      this.prisma.task.count({
+      await tx.task.count({
         where: { organizationId, deletedAt: null, status: 'IN_PROGRESS' },
       }),
-      this.prisma.task.count({
+      await tx.task.count({
         where: { organizationId, deletedAt: null, status: 'DONE' },
       }),
-      this.prisma.task.count({
+      await tx.task.count({
         where: {
           organizationId,
           deletedAt: null,

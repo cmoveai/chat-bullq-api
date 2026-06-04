@@ -26,19 +26,19 @@ export class DashboardService {
       prevMessages,
       closedInPeriod,
       prevClosedInPeriod,
-    ] = await this.prisma.$transaction([
-      this.prisma.conversation.count({ where }),
-      this.prisma.conversation.count({ where: prevWhere }),
-      this.prisma.conversation.count({ where: { organizationId, status: 'OPEN' } }),
-      this.prisma.conversation.count({ where: { organizationId, status: 'PENDING' } }),
-      this.prisma.conversation.count({ where: { organizationId, status: 'WAITING' } }),
-      this.prisma.conversation.count({ where: { organizationId, status: 'BOT' } }),
-      this.prisma.message.count({ where: { conversation: { organizationId }, createdAt: { gte: range.from, lte: range.to } } }),
-      this.prisma.message.count({ where: { conversation: { organizationId }, createdAt: { gte: prevFrom, lte: range.from } } }),
-      this.prisma.conversation.count({
+    ] = await this.prisma.$transaction(async (tx) => [
+      await tx.conversation.count({ where }),
+      await tx.conversation.count({ where: prevWhere }),
+      await tx.conversation.count({ where: { organizationId, status: 'OPEN' } }),
+      await tx.conversation.count({ where: { organizationId, status: 'PENDING' } }),
+      await tx.conversation.count({ where: { organizationId, status: 'WAITING' } }),
+      await tx.conversation.count({ where: { organizationId, status: 'BOT' } }),
+      await tx.message.count({ where: { conversation: { organizationId }, createdAt: { gte: range.from, lte: range.to } } }),
+      await tx.message.count({ where: { conversation: { organizationId }, createdAt: { gte: prevFrom, lte: range.from } } }),
+      await tx.conversation.count({
         where: { organizationId, status: 'CLOSED', closedAt: { gte: range.from, lte: range.to } },
       }),
-      this.prisma.conversation.count({
+      await tx.conversation.count({
         where: { organizationId, status: 'CLOSED', closedAt: { gte: prevFrom, lte: range.from } },
       }),
     ]);

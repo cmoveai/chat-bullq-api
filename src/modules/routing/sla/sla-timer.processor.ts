@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { ConversationStatus, NotificationType } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
+import { runWithTenant } from '../../../database/tenant-context';
 import { NotificationsService } from '../../notifications/notifications.service';
 
 @Processor('sla-timers', { concurrency: 2 })
@@ -17,6 +18,10 @@ export class SlaTimerProcessor extends WorkerHost {
   }
 
   async process(job: Job): Promise<any> {
+    return runWithTenant(job.data.organizationId, () => this.handle(job));
+  }
+
+  private async handle(job: Job): Promise<any> {
     const { conversationId, type, organizationId } = job.data as {
       conversationId: string;
       type: 'first-response' | 'resolution';

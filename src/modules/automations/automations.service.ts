@@ -48,10 +48,10 @@ export class AutomationsService {
       organizationId,
       deletedAt: null,
     };
-    const [total, active, executionsAgg] = await this.prisma.$transaction([
-      this.prisma.automation.count({ where }),
-      this.prisma.automation.count({ where: { ...where, isActive: true } }),
-      this.prisma.automation.aggregate({
+    const [total, active, executionsAgg] = await this.prisma.$transaction(async (tx) => [
+      await tx.automation.count({ where }),
+      await tx.automation.count({ where: { ...where, isActive: true } }),
+      await tx.automation.aggregate({
         where,
         _sum: { executionsCount: true },
       }),

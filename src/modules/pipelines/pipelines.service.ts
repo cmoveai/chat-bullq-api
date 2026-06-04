@@ -15,26 +15,24 @@ import {
   UpdatePipelineDto,
   UpsertStageDto,
 } from './dto/pipeline.dto';
+import { DEFAULT_PIPELINE_STAGES } from './pipeline-defaults';
 
-// 15 stages padrão · paridade com AutomateFlow Kanban
-// (NORMAL pra fluxo · WON pra fechamento positivo · LOST pra perdido)
-const DEFAULT_STAGES: UpsertStageDto[] = [
-  { name: 'Boas-vindas', color: 'sky', type: 'NORMAL', order: 0 },
-  { name: 'Lead', color: 'blue', type: 'NORMAL', order: 1 },
-  { name: 'Novo Ticket', color: 'indigo', type: 'NORMAL', order: 2 },
-  { name: 'Configuração', color: 'violet', type: 'NORMAL', order: 3 },
-  { name: 'Em Andamento', color: 'amber', type: 'NORMAL', order: 4 },
-  { name: 'Qualificado', color: 'purple', type: 'NORMAL', order: 5 },
-  { name: 'Aguardando Cliente', color: 'fuchsia', type: 'NORMAL', order: 6 },
-  { name: 'Proposta', color: 'pink', type: 'NORMAL', order: 7 },
-  { name: 'Treinamento', color: 'yellow', type: 'NORMAL', order: 8 },
-  { name: 'Ativo', color: 'emerald', type: 'NORMAL', order: 9 },
-  { name: 'Negociação', color: 'orange', type: 'NORMAL', order: 10 },
-  { name: 'Resolvido', color: 'teal', type: 'NORMAL', order: 11 },
-  { name: 'Fechado', color: 'green', type: 'WON', order: 12 },
-  { name: 'Ganho', color: 'green', type: 'WON', order: 13 },
-  { name: 'Perdido', color: 'red', type: 'LOST', order: 14 },
-];
+// 15 stages padrão · paridade com AutomateFlow Kanban · fonte única em
+// pipeline-defaults.ts (reusado pelo provisionamento automático no signup).
+const DEFAULT_STAGES: UpsertStageDto[] = DEFAULT_PIPELINE_STAGES;
+
+/**
+ * Quem está movendo o card. Toda movimentação passa por moveCard() e grava
+ * em card_stage_history (Fase 2.5). Quando type='AGENT' (SDR), reason é
+ * obrigatório — o SDR nunca move sem motivo/contexto.
+ */
+export interface CardMover {
+  type: 'USER' | 'AGENT' | 'SYSTEM';
+  userId?: string | null;
+  agentId?: string | null;
+  reason?: string | null;
+  context?: Record<string, any>;
+}
 
 @Injectable()
 export class PipelinesService {
@@ -58,12 +56,12 @@ export class PipelinesService {
 
   async getBoard(pipelineId: string, organizationId: string) {
     const pipeline = await this.assertPipeline(pipelineId, organizationId);
-    const [stages, cards] = await this.prisma.$transaction([
-      this.prisma.pipelineStage.findMany({
+    const [stages, cards] = await this.prisma.$transaction(async (tx) => [
+      await tx.pipelineStage.findMany({
         where: { pipelineId },
         orderBy: { order: 'asc' },
       }),
-      this.prisma.card.findMany({
+      await tx.card.findMany({
         where: { pipelineId },
         orderBy: { order: 'asc' },
         include: {
@@ -385,6 +383,201 @@ export class PipelinesService {
     });
   }
 
+  // ─────────────────────────────────────────────────────────────────────
+  // Operações de SDR / funil (Fase 2.5). Camada segura usada pelo agente
+  // (SDR) e pelas ações de funil das automações. Cada operação isola por
+  // tenant (organizationId checado), emite realtime e — quando move stage —
+  // passa pelo chokepoint moveCard (auditoria). Qualificação/score/follow-up
+  // não movem stage; o log da decisão fica no caller (ai_agent_runs /
+  // automation_executions).
+  // ─────────────────────────────────────────────────────────────────────
+
+  private static readonly QUALIFICATION_STATUSES = [
+    'NEW',
+    'QUALIFYING',
+    'QUALIFIED',
+    'DISQUALIFIED',
+  ];
+
+  private async loadCard(cardId: string, organizationId: string) {
+    const card = await this.prisma.card.findUnique({ where: { id: cardId } });
+    if (!card || card.organizationId !== organizationId) {
+      throw new NotFoundException('Card not found');
+    }
+    return card;
+  }
+
+  /** Resolve o card de uma conversa/contato (pra agente e automações). */
+  async resolveCardForContext(
+    organizationId: string,
+    ctx: { conversationId?: string | null; contactId?: string | null },
+  ) {
+    if (ctx.conversationId) {
+      const byConv = await this.prisma.card.findFirst({
+        where: { organizationId, conversationId: ctx.conversationId },
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (byConv) return byConv;
+    }
+    if (ctx.contactId) {
+      return this.prisma.card.findFirst({
+        where: { organizationId, contactId: ctx.contactId, status: 'OPEN' },
+        orderBy: { updatedAt: 'desc' },
+      });
+    }
+    return null;
+  }
+
+  /** Qualifica/desqualifica um card. Opcionalmente ajusta o lead score. */
+  async qualifyCard(
+    cardId: string,
+    organizationId: string,
+    input: {
+      status: string;
+      reason?: string | null;
+      agentId?: string | null;
+      scoreDelta?: number;
+    },
+  ) {
+    await this.loadCard(cardId, organizationId);
+    const status = input.status?.toUpperCase();
+    if (!PipelinesService.QUALIFICATION_STATUSES.includes(status)) {
+      throw new BadRequestException(
+        `qualification status inválido: ${input.status}`,
+      );
+    }
+    const qualified = status === 'QUALIFIED';
+    const updated = await this.prisma.card.update({
+      where: { id: cardId },
+      data: {
+        qualificationStatus: status,
+        qualifiedAt: qualified ? new Date() : null,
+        ...(input.scoreDelta
+          ? { leadScore: { increment: input.scoreDelta } }
+          : {}),
+        ...(input.agentId ? { sdrAgentId: input.agentId } : {}),
+      },
+    });
+    this.realtime.emitToOrg(organizationId, 'card:updated', { card: updated });
+    return updated;
+  }
+
+  /** Define (set) ou ajusta (delta) o lead score, com piso 0. */
+  async setLeadScore(
+    cardId: string,
+    organizationId: string,
+    input: { score?: number; delta?: number; agentId?: string | null },
+  ) {
+    const card = await this.loadCard(cardId, organizationId);
+    let next =
+      input.score !== undefined
+        ? input.score
+        : card.leadScore + (input.delta ?? 0);
+    if (next < 0) next = 0;
+    const updated = await this.prisma.card.update({
+      where: { id: cardId },
+      data: {
+        leadScore: next,
+        ...(input.agentId ? { sdrAgentId: input.agentId } : {}),
+      },
+    });
+    this.realtime.emitToOrg(organizationId, 'card:updated', { card: updated });
+    return updated;
+  }
+
+  /** Agenda follow-up: marca next_followup_at e cria uma task comercial. */
+  async scheduleFollowup(
+    cardId: string,
+    organizationId: string,
+    input: {
+      at: Date;
+      note?: string | null;
+      agentId?: string | null;
+      assignedToId?: string | null;
+    },
+  ) {
+    const card = await this.loadCard(cardId, organizationId);
+    const updated = await this.prisma.card.update({
+      where: { id: cardId },
+      data: { nextFollowupAt: input.at },
+    });
+    const task = await this.prisma.task.create({
+      data: {
+        organizationId,
+        title: input.note?.trim() || `Follow-up: ${card.title}`,
+        cardId,
+        contactId: card.contactId,
+        conversationId: card.conversationId,
+        assignedToId: input.assignedToId ?? card.assignedToId,
+        dueDate: input.at,
+        metadata: input.agentId ? { sdrAgentId: input.agentId } : {},
+      },
+    });
+    this.realtime.emitToOrg(organizationId, 'card:updated', { card: updated });
+    this.realtime.emitToOrg(organizationId, 'task:created', { task });
+    return { card: updated, task };
+  }
+
+  /** Cria uma task/atividade comercial avulsa ligada ao card/contato. */
+  async createCommercialTask(
+    organizationId: string,
+    input: {
+      title: string;
+      cardId?: string | null;
+      contactId?: string | null;
+      conversationId?: string | null;
+      dueDate?: Date | null;
+      assignedToId?: string | null;
+      agentId?: string | null;
+    },
+  ) {
+    if (input.cardId) await this.loadCard(input.cardId, organizationId);
+    const task = await this.prisma.task.create({
+      data: {
+        organizationId,
+        title: input.title,
+        cardId: input.cardId ?? null,
+        contactId: input.contactId ?? null,
+        conversationId: input.conversationId ?? null,
+        assignedToId: input.assignedToId ?? null,
+        dueDate: input.dueDate ?? null,
+        metadata: input.agentId ? { sdrAgentId: input.agentId } : {},
+      },
+    });
+    this.realtime.emitToOrg(organizationId, 'task:created', { task });
+    return task;
+  }
+
+  /**
+   * Handoff humano: tira a conversa do modo bot (status OPEN) para o humano
+   * assumir; a IA cala enquanto houver atividade humana. Mantém a saída de
+   * emergência exigida nas condições de segurança da Fase 2.5.
+   */
+  async handoffToHuman(
+    conversationId: string,
+    organizationId: string,
+    input: { reason?: string | null; assignedToId?: string | null },
+  ) {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conv || conv.organizationId !== organizationId) {
+      throw new NotFoundException('Conversation not found');
+    }
+    const updated = await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        status: 'OPEN',
+        ...(input.assignedToId ? { assignedToId: input.assignedToId } : {}),
+      },
+    });
+    this.realtime.emitToOrg(organizationId, 'conversation:handoff', {
+      conversationId,
+      reason: input.reason ?? null,
+    });
+    return updated;
+  }
+
   /**
    * Gera uma Cobrança Pix a partir de um Card · puxa Contact (nome/email/telefone)
    * e Card.value como valor default. Body permite override de tudo.
@@ -503,6 +696,7 @@ export class PipelinesService {
     cardId: string,
     organizationId: string,
     dto: MoveCardDto,
+    mover: CardMover = { type: 'USER' },
   ) {
     const card = await this.prisma.card.findUnique({ where: { id: cardId } });
     if (!card || card.organizationId !== organizationId) {
@@ -531,6 +725,23 @@ export class PipelinesService {
       newStatus = CardStatus.OPEN;
       newClosedAt = null;
     }
+
+    const stageChanged = !sameStage;
+    const statusChanged = newStatus !== card.status;
+    const reason = mover.reason?.trim() || null;
+
+    // Condição de segurança Fase 2.5: o SDR (AGENT) nunca move sem motivo.
+    if ((stageChanged || statusChanged) && mover.type === 'AGENT' && !reason) {
+      throw new BadRequestException(
+        'SDR não pode mover card sem registrar motivo/contexto',
+      );
+    }
+
+    // Ganho/perda: se houver motivo no movimento, persiste em closedReason
+    // (rastreabilidade); senão preserva o que já estava.
+    const closingStatus = newStatus === 'WON' || newStatus === 'LOST';
+    const newClosedReason =
+      statusChanged && closingStatus && reason ? reason : card.closedReason;
 
     await this.prisma.$transaction(async (tx) => {
       if (sameStage) {
@@ -583,8 +794,30 @@ export class PipelinesService {
           order: dto.toIndex,
           status: newStatus,
           closedAt: newClosedAt,
+          closedReason: newClosedReason,
         },
       });
+
+      // Trilha de auditoria · grava em TODA mudança de stage ou status.
+      // Reorder puro (mesma coluna, status inalterado) não gera histórico.
+      if (stageChanged || statusChanged) {
+        await tx.cardStageHistory.create({
+          data: {
+            organizationId,
+            cardId,
+            pipelineId: card.pipelineId,
+            fromStageId,
+            toStageId: dto.toStageId,
+            fromStatus: card.status,
+            toStatus: newStatus,
+            movedByType: mover.type,
+            movedByUserId: mover.userId ?? null,
+            movedByAgentId: mover.agentId ?? null,
+            reason,
+            context: (mover.context ?? {}) as Prisma.InputJsonValue,
+          },
+        });
+      }
     });
 
     this.realtime.emitToOrg(organizationId, 'card:moved', {

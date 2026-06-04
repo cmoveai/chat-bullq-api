@@ -46,7 +46,7 @@ export class AiCatalogController {
   }
 
   @Post('tools')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Cria tool customizada (HTTP)' })
   createTool(
     @CurrentOrg('id') orgId: string,
@@ -56,7 +56,7 @@ export class AiCatalogController {
   }
 
   @Patch('tools/:id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   updateTool(
     @CurrentOrg('id') orgId: string,
     @Param('id') id: string,
@@ -66,7 +66,7 @@ export class AiCatalogController {
   }
 
   @Delete('tools/:id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   removeTool(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
     return this.tools.softDelete(orgId, id);
   }
@@ -94,7 +94,7 @@ export class AiCatalogController {
   }
 
   @Post('skills')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   createSkill(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
@@ -104,7 +104,7 @@ export class AiCatalogController {
   }
 
   @Patch('skills/:id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   updateSkill(
     @CurrentOrg('id') orgId: string,
     @CurrentUser('id') userId: string,
@@ -115,7 +115,7 @@ export class AiCatalogController {
   }
 
   @Delete('skills/:id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   removeSkill(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
     return this.skills.softDelete(orgId, id);
   }
@@ -123,7 +123,7 @@ export class AiCatalogController {
   // ── Agent ↔ skills/tools ────────────────────────────────────────
 
   @Put('agents/:agentId/skills')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Substitui o conjunto de skills atribuídas ao agent' })
   setAgentSkills(
     @CurrentOrg('id') orgId: string,

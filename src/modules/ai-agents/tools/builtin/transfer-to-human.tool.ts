@@ -49,8 +49,8 @@ export class TransferToHumanTool implements AiTool {
     const reason = String(input.reason ?? '').trim() || 'Handoff sem motivo informado';
     const summary = input.summary ? String(input.summary).trim() : null;
 
-    await this.prisma.$transaction([
-      this.prisma.conversation.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.conversation.update({
         where: { id: ctx.conversationId },
         data: {
           aiEnabled: false,
@@ -60,16 +60,16 @@ export class TransferToHumanTool implements AiTool {
           status: ConversationStatus.PENDING,
           assignedToId: null,
         },
-      }),
-      this.prisma.conversationAuditLog.create({
+      });
+      await tx.conversationAuditLog.create({
         data: {
           conversationId: ctx.conversationId,
           actorId: null,
           action: 'AI_HANDOFF_TO_HUMAN',
           metadata: { agentId: ctx.agentId, reason, summary, runId: ctx.runId },
         },
-      }),
-    ]);
+      });
+    });
 
     this.realtime.emitToConversation(ctx.conversationId, 'conversation:ai-paused', {
       conversationId: ctx.conversationId,

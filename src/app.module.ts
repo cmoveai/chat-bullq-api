@@ -1,9 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TenantContextMiddleware } from './common/middleware/tenant-context.middleware';
 import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './database/prisma.module';
+import { EncryptionModule } from './common/crypto/encryption.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -44,6 +46,7 @@ import redisConfig from './config/redis.config';
     // Cyber Onda 2 · #26 · Sentry root (auto exception filter)
     SentryModule.forRoot(),
     ConfigModule.forRoot({ isGlobal: true, load: [redisConfig] }),
+    EncryptionModule,
     // Cyber Onda 1 · Rate limit global (throttler).
     // 3 buckets: short (rajadas) · medium · long. Endpoints sensíveis
     // (login/register/forgot) ganham buckets stricter via @Throttle().
@@ -100,4 +103,10 @@ import redisConfig from './config/redis.config';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // Fixa o tenant no contexto (AsyncLocalStorage) p/ todo request.
+    // Inerte enquanto RLS_ENFORCED=false; base do flip de RLS.
+    consumer.apply(TenantContextMiddleware).forRoutes('*');
+  }
+}

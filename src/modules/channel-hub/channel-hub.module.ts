@@ -5,6 +5,8 @@ import { WebhookGatewayController } from './webhook-gateway.controller';
 import { ChannelsController } from './channels/channels.controller';
 import { ChannelsService } from './channels/channels.service';
 import { ChannelsRepository } from './channels/channels.repository';
+import { WhatsAppOnboardingController } from './whatsapp-onboarding/whatsapp-onboarding.controller';
+import { WhatsAppOnboardingService } from './whatsapp-onboarding/whatsapp-onboarding.service';
 import { ZappfyModule } from './adapters/zappfy/zappfy.module';
 import { ZappfyInboundAdapter } from './adapters/zappfy/zappfy.inbound-adapter';
 import { ZappfyOutboundAdapter } from './adapters/zappfy/zappfy.outbound-adapter';
@@ -25,6 +27,7 @@ import { ChannelSyncProcessor } from './sync/channel-sync.processor';
 import { CHANNEL_SYNC_QUEUE } from './sync/channel-sync.constants';
 import { MessagingModule } from '../messaging/messaging.module';
 import { AutomationsModule } from '../automations/automations.module';
+import { SocialInteractionsModule } from '../social-interactions/social-interactions.module';
 import { WebhookEventsService } from './webhook-events.service';
 import { WebhookThrottleGuard } from './webhook-throttle.guard';
 
@@ -45,13 +48,19 @@ import { WebhookThrottleGuard } from './webhook-throttle.guard';
     WhatsAppOfficialModule,
     InstagramModule,
     AutomationsModule,
+    SocialInteractionsModule,
     forwardRef(() => MessagingModule),
   ],
-  controllers: [WebhookGatewayController, ChannelsController],
+  controllers: [
+    WebhookGatewayController,
+    ChannelsController,
+    WhatsAppOnboardingController,
+  ],
   providers: [
     ChannelAdapterRegistry,
     ChannelsService,
     ChannelsRepository,
+    WhatsAppOnboardingService,
     ChannelSyncOrchestrator,
     ChannelSyncProcessor,
     WebhookEventsService,

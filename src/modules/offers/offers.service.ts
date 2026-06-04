@@ -67,16 +67,16 @@ export class OffersService {
     const where: Prisma.CardWhereInput = { organizationId };
 
     const [total, open, won, lost, valueAgg, wonValueAgg] =
-      await this.prisma.$transaction([
-        this.prisma.card.count({ where }),
-        this.prisma.card.count({ where: { ...where, status: 'OPEN' } }),
-        this.prisma.card.count({ where: { ...where, status: 'WON' } }),
-        this.prisma.card.count({ where: { ...where, status: 'LOST' } }),
-        this.prisma.card.aggregate({
+      await this.prisma.$transaction(async (tx) => [
+        await tx.card.count({ where }),
+        await tx.card.count({ where: { ...where, status: 'OPEN' } }),
+        await tx.card.count({ where: { ...where, status: 'WON' } }),
+        await tx.card.count({ where: { ...where, status: 'LOST' } }),
+        await tx.card.aggregate({
           where,
           _sum: { value: true },
         }),
-        this.prisma.card.aggregate({
+        await tx.card.aggregate({
           where: { ...where, status: 'WON' },
           _sum: { value: true },
         }),

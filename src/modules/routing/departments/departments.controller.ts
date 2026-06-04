@@ -25,7 +25,7 @@ export class DepartmentsController {
   constructor(private readonly service: DepartmentsService) {}
 
   @Post()
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Create department' })
   create(@CurrentOrg('id') orgId: string, @Body() dto: CreateDepartmentDto) {
     return this.service.create(orgId, dto);
@@ -44,7 +44,7 @@ export class DepartmentsController {
   }
 
   @Patch(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Update department' })
   update(
     @Param('id') id: string,
@@ -55,14 +55,14 @@ export class DepartmentsController {
   }
 
   @Delete(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Soft-delete department' })
   remove(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.remove(id, orgId);
   }
 
   @Post(':id/agents')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Add agent to department' })
   addAgent(
     @Param('id') id: string,
@@ -73,7 +73,7 @@ export class DepartmentsController {
   }
 
   @Delete(':id/agents/:agentId')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Remove agent from department' })
   removeAgent(
     @Param('id') id: string,

@@ -88,7 +88,7 @@ export class DelegateToAgentTool implements AiTool {
         isActive: true,
         deletedAt: null,
       },
-      select: { id: true, name: true, kind: true },
+      select: { id: true, name: true, kind: true, squad: true },
     });
 
     if (!target) {
@@ -96,6 +96,21 @@ export class DelegateToAgentTool implements AiTool {
         output: {
           ok: false,
           error: `Agent ${targetAgentId} not found in this organization or is inactive`,
+        },
+      };
+    }
+
+    // Isolamento por squad: orquestrador com squad só delega para workers do
+    // MESMO squad (defesa contra alucinação de id de outra squad/operação).
+    const caller = await this.prisma.aiAgent.findUnique({
+      where: { id: ctx.agentId },
+      select: { squad: true },
+    });
+    if (caller?.squad && target.squad !== caller.squad) {
+      return {
+        output: {
+          ok: false,
+          error: `Cannot delegate to ${target.name}: agente fora da sua squad.`,
         },
       };
     }

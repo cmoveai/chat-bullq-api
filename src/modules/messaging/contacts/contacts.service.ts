@@ -15,15 +15,15 @@ export class ContactsService {
     startOfToday.setHours(0, 0, 0, 0);
 
     const where = { organizationId, deletedAt: null };
-    const [total, withEmail, withPhone, today] = await this.prisma.$transaction([
-      this.prisma.contact.count({ where }),
-      this.prisma.contact.count({
+    const [total, withEmail, withPhone, today] = await this.prisma.$transaction(async (tx) => [
+      await tx.contact.count({ where }),
+      await tx.contact.count({
         where: { ...where, email: { not: null } },
       }),
-      this.prisma.contact.count({
+      await tx.contact.count({
         where: { ...where, phone: { not: null } },
       }),
-      this.prisma.contact.count({
+      await tx.contact.count({
         where: { ...where, createdAt: { gte: startOfToday } },
       }),
     ]);

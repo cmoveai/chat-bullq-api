@@ -249,6 +249,7 @@ export class RealtimeGateway
   }
 
   emitToOrg(orgId: string, event: string, data: any) {
+    if (!this.server) return;
     this.server.to(`org:${orgId}`).emit(event, data);
   }
 
@@ -260,14 +261,17 @@ export class RealtimeGateway
    * (message, conversation update, sync progress).
    */
   emitToChannel(channelId: string, event: string, data: any) {
+    if (!this.server) return;
     this.server.to(`channel:${channelId}`).emit(event, data);
   }
 
   emitToConversation(conversationId: string, event: string, data: any) {
+    if (!this.server) return;
     this.server.to(`conv:${conversationId}`).emit(event, data);
   }
 
   emitToUser(userId: string, event: string, data: any) {
+    if (!this.server) return;
     this.server.to(`user:${userId}`).emit(event, data);
   }
 

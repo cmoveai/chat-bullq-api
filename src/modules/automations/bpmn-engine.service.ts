@@ -10,16 +10,21 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { InstagramHttpClient } from '../channel-hub/adapters/instagram/instagram.http-client';
+import { PipelinesService } from '../pipelines/pipelines.service';
 
 /**
  * Executor BPMN · lê config.nodes/edges salvos pelo construtor visual e
  * executa o flow quando um trigger acontece. Best-effort · nunca lança.
  *
  * Suporte atual:
- * - TRIGGER · IG_COMMENT, WA_MESSAGE (match por subtype)
+ * - TRIGGER · IG_COMMENT, IG_DM, WA_MESSAGE (match por subtype)
  * - CONDITION · KEYWORD, FIRST_TIME (output-0 = sim, output-1 = não)
- * - ACTION · SEND_DM (Instagram), SEND_WA (WhatsApp via fila outbound), TAG (cria + vincula ao contato)
+ * - ACTION · SEND_DM (IG comment→private_reply / IG DM→fila outbound),
+ *            SEND_WA (WhatsApp via fila outbound), TAG (cria + vincula ao contato)
  * - UTIL · END (encerra explicitamente)
+ *
+ * - ACTION funil/SDR (Fase 2.5, via PipelinesService seguro) · MOVE_CARD_STAGE,
+ *   SET_QUALIFICATION, SET_LEAD_SCORE, CREATE_TASK, SCHEDULE_FOLLOWUP, HANDOFF
  *
  * Não suporta ainda (loga SKIPPED com motivo):
  * - ACTION · SEND_EMAIL, TRANSFER, RUN_AGENT
@@ -68,6 +73,17 @@ export type TriggerEvent =
       contactId: string;
       externalEventId: string;
       text: string;
+    }
+  | {
+      type: 'IG_DM';
+      channelId: string;
+      organizationId: string;
+      contactId: string;
+      conversationId: string;
+      externalEventId: string;
+      externalContactId?: string;
+      text: string;
+      username?: string;
     };
 
 interface ExecutionContext {
@@ -88,6 +104,7 @@ export class BpmnEngine {
   constructor(
     private readonly prisma: PrismaService,
     private readonly instagramHttp: InstagramHttpClient,
+    private readonly pipelines: PipelinesService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
@@ -125,6 +142,7 @@ export class BpmnEngine {
     const subtypeMap: Record<TriggerEvent['type'], string> = {
       IG_COMMENT: 'IG_COMMENT',
       WA_MESSAGE: 'WA_MESSAGE',
+      IG_DM: 'IG_DM',
     };
     const subtype = subtypeMap[eventType];
     return (
@@ -233,7 +251,7 @@ export class BpmnEngine {
         });
         return prior === 0;
       }
-      if (ctx.event.type === 'WA_MESSAGE') {
+      if (ctx.event.type === 'WA_MESSAGE' || ctx.event.type === 'IG_DM') {
         const prior = await this.prisma.message.count({
           where: {
             conversation: { contactId: (ctx.event as any).contactId },
@@ -253,20 +271,31 @@ export class BpmnEngine {
     const subtype = node.data?.subtype;
 
     if (subtype === 'SEND_DM') {
-      if (ctx.event.type !== 'IG_COMMENT') {
-        ctx.errors.push('SEND_DM só funciona com TRIGGER IG_COMMENT');
-        return;
-      }
       const message = this.interpolate(node.data?.message ?? '', ctx);
       if (!message.trim()) {
         ctx.errors.push('SEND_DM sem mensagem · pulando');
         return;
       }
-      await this.instagramHttp.sendPrivateReply(
-        ctx.channel,
-        (ctx.event as any).externalCommentId,
-        message,
-      );
+      // Comentário → private_reply (abre a DM a partir do comentário).
+      // DM → mensagem normal pela fila outbound (mesmo caminho do inbox/IA).
+      if (ctx.event.type === 'IG_COMMENT') {
+        await this.instagramHttp.sendPrivateReply(
+          ctx.channel,
+          (ctx.event as any).externalCommentId,
+          message,
+        );
+        return;
+      }
+      if (ctx.event.type === 'IG_DM') {
+        await this.enqueueOutboundText(
+          ctx,
+          ctx.event.contactId,
+          ctx.event.channelId,
+          message,
+        );
+        return;
+      }
+      ctx.errors.push('SEND_DM só funciona com TRIGGER IG_COMMENT ou IG_DM');
       return;
     }
 
@@ -314,71 +343,189 @@ export class BpmnEngine {
         ctx.errors.push('SEND_WA sem mensagem · pulando');
         return;
       }
-      const contactId = (ctx.event as any).contactId;
-      const channelId = ctx.event.channelId;
-      const contactChannel = await this.prisma.contactChannel.findFirst({
-        where: { contactId, channelId },
-        select: { externalId: true },
-      });
-      if (!contactChannel?.externalId) {
-        ctx.errors.push('SEND_WA · contato sem externalId no canal · pulando');
-        return;
-      }
-      const conversation = await this.prisma.conversation.findFirst({
-        where: {
-          contactId,
-          channelId,
-          organizationId: ctx.event.organizationId,
-        },
-        orderBy: { lastMessageAt: 'desc' },
-        select: { id: true },
-      });
-      if (!conversation) {
-        ctx.errors.push('SEND_WA · sem conversa pro contato · pulando');
-        return;
-      }
-      // Mesma fila que o inbox/IA usam: o processor resolve o adapter certo
-      // (Z-API / Zappfy / WhatsApp Oficial) por channel.type e cuida de
-      // status, idempotência e realtime. Reuso, não duplicação.
-      const msg = await this.prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          direction: MessageDirection.OUTBOUND,
-          type: MessageContentType.TEXT,
-          content: { text: message },
-          status: MessageStatus.QUEUED,
-          metadata: { automationId: ctx.automationId },
-        },
-      });
-      await this.prisma.conversation
-        .update({
-          where: { id: conversation.id },
-          data: { lastMessageAt: new Date() },
-        })
-        .catch(() => undefined);
-      await this.outboundQueue.add(
-        'send-outbound',
-        {
-          messageId: msg.id,
-          channelId,
-          contactExternalId: contactChannel.externalId,
-          message: {
-            type: MessageContentType.TEXT,
-            content: { text: message },
-          },
-        },
-        {
-          attempts: 3,
-          backoff: { type: 'exponential', delay: 5000 },
-          removeOnComplete: true,
-          removeOnFail: false,
-        },
+      await this.enqueueOutboundText(
+        ctx,
+        ctx.event.contactId,
+        ctx.event.channelId,
+        message,
       );
       return;
     }
 
+    // ─── Ações de funil/SDR (Fase 2.5) · passam pela camada segura do
+    //     PipelinesService (auditoria + isolamento por tenant). O motor é
+    //     'SYSTEM' como movedor; o reason do node entra na trilha. ───
+    if (
+      subtype === 'MOVE_CARD_STAGE' ||
+      subtype === 'SET_QUALIFICATION' ||
+      subtype === 'SET_LEAD_SCORE' ||
+      subtype === 'CREATE_TASK' ||
+      subtype === 'SCHEDULE_FOLLOWUP' ||
+      subtype === 'HANDOFF'
+    ) {
+      const orgId = ctx.event.organizationId;
+      const conversationId = (ctx.event as any).conversationId as
+        | string
+        | undefined;
+      const contactId = (ctx.event as any).contactId as string | undefined;
+      const reason =
+        (typeof node.data?.reason === 'string' && node.data.reason.trim()) ||
+        `Automação ${ctx.automationId}`;
+
+      if (subtype === 'HANDOFF') {
+        if (!conversationId) {
+          ctx.errors.push('HANDOFF sem conversationId no evento · pulando');
+          return;
+        }
+        await this.pipelines.handoffToHuman(conversationId, orgId, { reason });
+        return;
+      }
+
+      const card = await this.pipelines.resolveCardForContext(orgId, {
+        conversationId,
+        contactId,
+      });
+      if (!card) {
+        ctx.errors.push(`${subtype} · sem card pro contato/conversa · pulando`);
+        return;
+      }
+
+      if (subtype === 'MOVE_CARD_STAGE') {
+        const toStageId = node.data?.toStageId;
+        if (!toStageId) {
+          ctx.errors.push('MOVE_CARD_STAGE sem toStageId · pulando');
+          return;
+        }
+        await this.pipelines.moveCard(
+          card.id,
+          orgId,
+          { toStageId, toIndex: 0 },
+          { type: 'SYSTEM', reason, context: { automationId: ctx.automationId } },
+        );
+        return;
+      }
+
+      if (subtype === 'SET_QUALIFICATION') {
+        await this.pipelines.qualifyCard(card.id, orgId, {
+          status: node.data?.status,
+          reason,
+          scoreDelta:
+            typeof node.data?.scoreDelta === 'number'
+              ? node.data.scoreDelta
+              : undefined,
+        });
+        return;
+      }
+
+      if (subtype === 'SET_LEAD_SCORE') {
+        await this.pipelines.setLeadScore(card.id, orgId, {
+          score:
+            typeof node.data?.score === 'number' ? node.data.score : undefined,
+          delta:
+            typeof node.data?.delta === 'number' ? node.data.delta : undefined,
+        });
+        return;
+      }
+
+      if (subtype === 'CREATE_TASK') {
+        await this.pipelines.createCommercialTask(orgId, {
+          title:
+            (typeof node.data?.title === 'string' && node.data.title.trim()) ||
+            `Atividade: ${card.title}`,
+          cardId: card.id,
+          contactId: card.contactId,
+          conversationId: card.conversationId,
+          dueDate: this.dueFromHours(node.data?.dueInHours),
+        });
+        return;
+      }
+
+      if (subtype === 'SCHEDULE_FOLLOWUP') {
+        const at =
+          this.dueFromHours(node.data?.inHours) ??
+          new Date(Date.now() + 24 * 3600 * 1000);
+        await this.pipelines.scheduleFollowup(card.id, orgId, {
+          at,
+          note: typeof node.data?.note === 'string' ? node.data.note : null,
+        });
+        return;
+      }
+    }
+
     // SEND_EMAIL, TRANSFER, RUN_AGENT · não implementados ainda
     ctx.errors.push(`ACTION ${subtype} não implementada ainda · pulando`);
+  }
+
+  /** Converte "daqui a N horas" em Date · null se inválido. */
+  private dueFromHours(hours: unknown): Date | null {
+    const n = typeof hours === 'number' ? hours : Number(hours);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return new Date(Date.now() + n * 3600 * 1000);
+  }
+
+  /**
+   * Enfileira uma mensagem de texto outbound numa conversa existente —
+   * omnichannel. Reusa a MESMA fila do inbox/IA: o processor resolve o
+   * adapter por channel.type (WhatsApp Oficial/Z-API/Zappfy, Instagram) e
+   * cuida de status, idempotência e realtime. Não duplica envio.
+   */
+  private async enqueueOutboundText(
+    ctx: ExecutionContext,
+    contactId: string,
+    channelId: string,
+    message: string,
+  ): Promise<void> {
+    const contactChannel = await this.prisma.contactChannel.findFirst({
+      where: { contactId, channelId },
+      select: { externalId: true },
+    });
+    if (!contactChannel?.externalId) {
+      ctx.errors.push('SEND · contato sem externalId no canal · pulando');
+      return;
+    }
+    const conversation = await this.prisma.conversation.findFirst({
+      where: { contactId, channelId, organizationId: ctx.event.organizationId },
+      orderBy: { lastMessageAt: 'desc' },
+      select: { id: true },
+    });
+    if (!conversation) {
+      ctx.errors.push('SEND · sem conversa pro contato · pulando');
+      return;
+    }
+    const msg = await this.prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        direction: MessageDirection.OUTBOUND,
+        type: MessageContentType.TEXT,
+        content: { text: message },
+        status: MessageStatus.QUEUED,
+        metadata: { automationId: ctx.automationId },
+      },
+    });
+    await this.prisma.conversation
+      .update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      })
+      .catch(() => undefined);
+    await this.outboundQueue.add(
+      'send-outbound',
+      {
+        messageId: msg.id,
+        channelId,
+        contactExternalId: contactChannel.externalId,
+        message: {
+          type: MessageContentType.TEXT,
+          content: { text: message },
+        },
+      },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    );
   }
 
   private interpolate(template: string, ctx: ExecutionContext): string {

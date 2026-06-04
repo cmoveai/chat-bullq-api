@@ -54,13 +54,13 @@ export class OrganizationsRepository {
     });
   }
 
-  async addMember(organizationId: string, userId: string, role: 'OWNER' | 'ADMIN' | 'AGENT') {
+  async addMember(organizationId: string, userId: string, role: OrgRole) {
     return this.prisma.userOrganization.create({
       data: { organizationId, userId, role },
     });
   }
 
-  async updateMemberRole(membershipId: string, role: 'OWNER' | 'ADMIN' | 'AGENT') {
+  async updateMemberRole(membershipId: string, role: OrgRole) {
     return this.prisma.userOrganization.update({
       where: { id: membershipId },
       data: { role },

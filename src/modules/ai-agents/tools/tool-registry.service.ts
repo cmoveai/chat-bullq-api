@@ -13,6 +13,16 @@ import { CreateSupportTicketTool } from './builtin/create-support-ticket.tool';
 import { LookupOpenInvoiceTool } from './builtin/lookup-open-invoice.tool';
 import { GetPixPaymentTool } from './builtin/get-pix-payment.tool';
 import { ScheduleWhatsappReminderTool } from './builtin/schedule-whatsapp-reminder.tool';
+import {
+  QualifyLeadTool,
+  MoveCardStageTool,
+  SetLeadScoreTool,
+  ScheduleFollowupTool,
+  CreateTaskTool,
+  RequestHumanHandoffTool,
+  MarkWonTool,
+  MarkLostTool,
+} from './builtin/sdr.tools';
 
 /**
  * Registry of BUILT-IN skills (named "tools" in the code for legacy reasons).
@@ -39,6 +49,14 @@ export class ToolRegistry {
     lookupInvoice: LookupOpenInvoiceTool,
     getPix: GetPixPaymentTool,
     scheduleReminder: ScheduleWhatsappReminderTool,
+    qualifyLead: QualifyLeadTool,
+    moveCardStage: MoveCardStageTool,
+    setLeadScore: SetLeadScoreTool,
+    scheduleFollowup: ScheduleFollowupTool,
+    createCommercialTask: CreateTaskTool,
+    requestHumanHandoff: RequestHumanHandoffTool,
+    markWon: MarkWonTool,
+    markLost: MarkLostTool,
   ) {
     this.register(reply, ['ORCHESTRATOR', 'WORKER']);
     this.register(transfer, ['ORCHESTRATOR', 'WORKER']);
@@ -59,6 +77,17 @@ export class ToolRegistry {
     // worker que prometa lembrete/follow-up. ORCHESTRATOR também pode pra
     // agendar resposta longa que precisa esperar evento externo.
     this.register(scheduleReminder, ['ORCHESTRATOR', 'WORKER']);
+
+    // SDR (Fase 2.5) · operam a oportunidade comercial (card) via camada
+    // segura + auditoria em sdr_action_log. WORKER de vendas é o SDR.
+    this.register(qualifyLead, ['ORCHESTRATOR', 'WORKER']);
+    this.register(moveCardStage, ['ORCHESTRATOR', 'WORKER']);
+    this.register(setLeadScore, ['ORCHESTRATOR', 'WORKER']);
+    this.register(scheduleFollowup, ['ORCHESTRATOR', 'WORKER']);
+    this.register(createCommercialTask, ['ORCHESTRATOR', 'WORKER']);
+    this.register(requestHumanHandoff, ['ORCHESTRATOR', 'WORKER']);
+    this.register(markWon, ['ORCHESTRATOR', 'WORKER']);
+    this.register(markLost, ['ORCHESTRATOR', 'WORKER']);
 
     this.logger.log(
       `Built-in skills loaded: ${[...this.tools.keys()].join(', ')}`,
