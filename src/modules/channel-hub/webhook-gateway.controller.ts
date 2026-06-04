@@ -201,13 +201,29 @@ export class WebhookGatewayController {
                 `BpmnEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
               ),
             );
-          await this.automationEngine
-            .handleInstagramComment(channel.id, comment)
-            .catch((err) =>
-              this.logger.error(
-                `AutomationEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
-              ),
+          // Decommission seguro do legacy comment→DM (por canal):
+          // legacy só roda se (a) a flag do canal permite (default: permitido)
+          // E (b) NÃO existe flow genérico IG_COMMENT ativo no canal. Assim,
+          // canal migrado (com flow genérico) suprime o legacy → nunca os dois
+          // enviam DM pro mesmo comentário.
+          const cfg = channel.config as Record<string, any> | null;
+          const legacyEnabled = cfg?.legacyCommentDmEnabled !== false;
+          const hasGenericFlow = await this.bpmnEngine
+            .hasActiveFlow(orgId, channel.id, 'IG_COMMENT')
+            .catch(() => false);
+          if (legacyEnabled && !hasGenericFlow) {
+            await this.automationEngine
+              .handleInstagramComment(channel.id, comment)
+              .catch((err) =>
+                this.logger.error(
+                  `AutomationEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
+                ),
+              );
+          } else {
+            this.logger.debug(
+              `Legacy comment→DM suprimido · canal ${channel.id} (generic=${hasGenericFlow}, legacyEnabled=${legacyEnabled})`,
             );
+          }
         });
       }
     }

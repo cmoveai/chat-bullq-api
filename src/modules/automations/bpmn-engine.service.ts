@@ -164,6 +164,32 @@ export class BpmnEngine {
     }
   }
 
+  /**
+   * Há alguma automation ATIVA com um flow genérico escutando esse trigger
+   * neste canal? Usado pelo decommission do legacy: se o canal já usa o flow
+   * genérico de comentário, o legacy é suprimido (evita SEND_DM duplicado).
+   * Roda no contexto de tenant (RLS).
+   */
+  async hasActiveFlow(
+    organizationId: string,
+    channelId: string,
+    triggerType: TriggerEvent['type'],
+  ): Promise<boolean> {
+    const automations = await this.prisma.automation.findMany({
+      where: { organizationId, channelId, isActive: true, deletedAt: null },
+      select: { config: true },
+    });
+    return automations.some((a) => {
+      const cfg = a.config as unknown as BpmnConfig | null;
+      return (
+        Array.isArray(cfg?.nodes) &&
+        cfg!.nodes.some(
+          (n) => n?.type === 'TRIGGER' && n?.data?.subtype === triggerType,
+        )
+      );
+    });
+  }
+
   private findTriggerNode(nodes: BpmnNode[], eventType: TriggerEvent['type']): BpmnNode | null {
     const subtypeMap: Record<TriggerEvent['type'], string> = {
       IG_COMMENT: 'IG_COMMENT',
