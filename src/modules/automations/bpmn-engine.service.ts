@@ -10,6 +10,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { InstagramHttpClient } from '../channel-hub/adapters/instagram/instagram.http-client';
+import { PipelinesService } from '../pipelines/pipelines.service';
 
 /**
  * Executor BPMN · lê config.nodes/edges salvos pelo construtor visual e
@@ -21,6 +22,9 @@ import { InstagramHttpClient } from '../channel-hub/adapters/instagram/instagram
  * - ACTION · SEND_DM (IG comment→private_reply / IG DM→fila outbound),
  *            SEND_WA (WhatsApp via fila outbound), TAG (cria + vincula ao contato)
  * - UTIL · END (encerra explicitamente)
+ *
+ * - ACTION funil/SDR (Fase 2.5, via PipelinesService seguro) · MOVE_CARD_STAGE,
+ *   SET_QUALIFICATION, SET_LEAD_SCORE, CREATE_TASK, SCHEDULE_FOLLOWUP, HANDOFF
  *
  * Não suporta ainda (loga SKIPPED com motivo):
  * - ACTION · SEND_EMAIL, TRANSFER, RUN_AGENT
@@ -100,6 +104,7 @@ export class BpmnEngine {
   constructor(
     private readonly prisma: PrismaService,
     private readonly instagramHttp: InstagramHttpClient,
+    private readonly pipelines: PipelinesService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
@@ -347,8 +352,115 @@ export class BpmnEngine {
       return;
     }
 
+    // ─── Ações de funil/SDR (Fase 2.5) · passam pela camada segura do
+    //     PipelinesService (auditoria + isolamento por tenant). O motor é
+    //     'SYSTEM' como movedor; o reason do node entra na trilha. ───
+    if (
+      subtype === 'MOVE_CARD_STAGE' ||
+      subtype === 'SET_QUALIFICATION' ||
+      subtype === 'SET_LEAD_SCORE' ||
+      subtype === 'CREATE_TASK' ||
+      subtype === 'SCHEDULE_FOLLOWUP' ||
+      subtype === 'HANDOFF'
+    ) {
+      const orgId = ctx.event.organizationId;
+      const conversationId = (ctx.event as any).conversationId as
+        | string
+        | undefined;
+      const contactId = (ctx.event as any).contactId as string | undefined;
+      const reason =
+        (typeof node.data?.reason === 'string' && node.data.reason.trim()) ||
+        `Automação ${ctx.automationId}`;
+
+      if (subtype === 'HANDOFF') {
+        if (!conversationId) {
+          ctx.errors.push('HANDOFF sem conversationId no evento · pulando');
+          return;
+        }
+        await this.pipelines.handoffToHuman(conversationId, orgId, { reason });
+        return;
+      }
+
+      const card = await this.pipelines.resolveCardForContext(orgId, {
+        conversationId,
+        contactId,
+      });
+      if (!card) {
+        ctx.errors.push(`${subtype} · sem card pro contato/conversa · pulando`);
+        return;
+      }
+
+      if (subtype === 'MOVE_CARD_STAGE') {
+        const toStageId = node.data?.toStageId;
+        if (!toStageId) {
+          ctx.errors.push('MOVE_CARD_STAGE sem toStageId · pulando');
+          return;
+        }
+        await this.pipelines.moveCard(
+          card.id,
+          orgId,
+          { toStageId, toIndex: 0 },
+          { type: 'SYSTEM', reason, context: { automationId: ctx.automationId } },
+        );
+        return;
+      }
+
+      if (subtype === 'SET_QUALIFICATION') {
+        await this.pipelines.qualifyCard(card.id, orgId, {
+          status: node.data?.status,
+          reason,
+          scoreDelta:
+            typeof node.data?.scoreDelta === 'number'
+              ? node.data.scoreDelta
+              : undefined,
+        });
+        return;
+      }
+
+      if (subtype === 'SET_LEAD_SCORE') {
+        await this.pipelines.setLeadScore(card.id, orgId, {
+          score:
+            typeof node.data?.score === 'number' ? node.data.score : undefined,
+          delta:
+            typeof node.data?.delta === 'number' ? node.data.delta : undefined,
+        });
+        return;
+      }
+
+      if (subtype === 'CREATE_TASK') {
+        await this.pipelines.createCommercialTask(orgId, {
+          title:
+            (typeof node.data?.title === 'string' && node.data.title.trim()) ||
+            `Atividade: ${card.title}`,
+          cardId: card.id,
+          contactId: card.contactId,
+          conversationId: card.conversationId,
+          dueDate: this.dueFromHours(node.data?.dueInHours),
+        });
+        return;
+      }
+
+      if (subtype === 'SCHEDULE_FOLLOWUP') {
+        const at =
+          this.dueFromHours(node.data?.inHours) ??
+          new Date(Date.now() + 24 * 3600 * 1000);
+        await this.pipelines.scheduleFollowup(card.id, orgId, {
+          at,
+          note: typeof node.data?.note === 'string' ? node.data.note : null,
+        });
+        return;
+      }
+    }
+
     // SEND_EMAIL, TRANSFER, RUN_AGENT · não implementados ainda
     ctx.errors.push(`ACTION ${subtype} não implementada ainda · pulando`);
+  }
+
+  /** Converte "daqui a N horas" em Date · null se inválido. */
+  private dueFromHours(hours: unknown): Date | null {
+    const n = typeof hours === 'number' ? hours : Number(hours);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return new Date(Date.now() + n * 3600 * 1000);
   }
 
   /**

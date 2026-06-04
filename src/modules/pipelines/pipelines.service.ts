@@ -383,6 +383,201 @@ export class PipelinesService {
     });
   }
 
+  // ─────────────────────────────────────────────────────────────────────
+  // Operações de SDR / funil (Fase 2.5). Camada segura usada pelo agente
+  // (SDR) e pelas ações de funil das automações. Cada operação isola por
+  // tenant (organizationId checado), emite realtime e — quando move stage —
+  // passa pelo chokepoint moveCard (auditoria). Qualificação/score/follow-up
+  // não movem stage; o log da decisão fica no caller (ai_agent_runs /
+  // automation_executions).
+  // ─────────────────────────────────────────────────────────────────────
+
+  private static readonly QUALIFICATION_STATUSES = [
+    'NEW',
+    'QUALIFYING',
+    'QUALIFIED',
+    'DISQUALIFIED',
+  ];
+
+  private async loadCard(cardId: string, organizationId: string) {
+    const card = await this.prisma.card.findUnique({ where: { id: cardId } });
+    if (!card || card.organizationId !== organizationId) {
+      throw new NotFoundException('Card not found');
+    }
+    return card;
+  }
+
+  /** Resolve o card de uma conversa/contato (pra agente e automações). */
+  async resolveCardForContext(
+    organizationId: string,
+    ctx: { conversationId?: string | null; contactId?: string | null },
+  ) {
+    if (ctx.conversationId) {
+      const byConv = await this.prisma.card.findFirst({
+        where: { organizationId, conversationId: ctx.conversationId },
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (byConv) return byConv;
+    }
+    if (ctx.contactId) {
+      return this.prisma.card.findFirst({
+        where: { organizationId, contactId: ctx.contactId, status: 'OPEN' },
+        orderBy: { updatedAt: 'desc' },
+      });
+    }
+    return null;
+  }
+
+  /** Qualifica/desqualifica um card. Opcionalmente ajusta o lead score. */
+  async qualifyCard(
+    cardId: string,
+    organizationId: string,
+    input: {
+      status: string;
+      reason?: string | null;
+      agentId?: string | null;
+      scoreDelta?: number;
+    },
+  ) {
+    await this.loadCard(cardId, organizationId);
+    const status = input.status?.toUpperCase();
+    if (!PipelinesService.QUALIFICATION_STATUSES.includes(status)) {
+      throw new BadRequestException(
+        `qualification status inválido: ${input.status}`,
+      );
+    }
+    const qualified = status === 'QUALIFIED';
+    const updated = await this.prisma.card.update({
+      where: { id: cardId },
+      data: {
+        qualificationStatus: status,
+        qualifiedAt: qualified ? new Date() : null,
+        ...(input.scoreDelta
+          ? { leadScore: { increment: input.scoreDelta } }
+          : {}),
+        ...(input.agentId ? { sdrAgentId: input.agentId } : {}),
+      },
+    });
+    this.realtime.emitToOrg(organizationId, 'card:updated', { card: updated });
+    return updated;
+  }
+
+  /** Define (set) ou ajusta (delta) o lead score, com piso 0. */
+  async setLeadScore(
+    cardId: string,
+    organizationId: string,
+    input: { score?: number; delta?: number; agentId?: string | null },
+  ) {
+    const card = await this.loadCard(cardId, organizationId);
+    let next =
+      input.score !== undefined
+        ? input.score
+        : card.leadScore + (input.delta ?? 0);
+    if (next < 0) next = 0;
+    const updated = await this.prisma.card.update({
+      where: { id: cardId },
+      data: {
+        leadScore: next,
+        ...(input.agentId ? { sdrAgentId: input.agentId } : {}),
+      },
+    });
+    this.realtime.emitToOrg(organizationId, 'card:updated', { card: updated });
+    return updated;
+  }
+
+  /** Agenda follow-up: marca next_followup_at e cria uma task comercial. */
+  async scheduleFollowup(
+    cardId: string,
+    organizationId: string,
+    input: {
+      at: Date;
+      note?: string | null;
+      agentId?: string | null;
+      assignedToId?: string | null;
+    },
+  ) {
+    const card = await this.loadCard(cardId, organizationId);
+    const updated = await this.prisma.card.update({
+      where: { id: cardId },
+      data: { nextFollowupAt: input.at },
+    });
+    const task = await this.prisma.task.create({
+      data: {
+        organizationId,
+        title: input.note?.trim() || `Follow-up: ${card.title}`,
+        cardId,
+        contactId: card.contactId,
+        conversationId: card.conversationId,
+        assignedToId: input.assignedToId ?? card.assignedToId,
+        dueDate: input.at,
+        metadata: input.agentId ? { sdrAgentId: input.agentId } : {},
+      },
+    });
+    this.realtime.emitToOrg(organizationId, 'card:updated', { card: updated });
+    this.realtime.emitToOrg(organizationId, 'task:created', { task });
+    return { card: updated, task };
+  }
+
+  /** Cria uma task/atividade comercial avulsa ligada ao card/contato. */
+  async createCommercialTask(
+    organizationId: string,
+    input: {
+      title: string;
+      cardId?: string | null;
+      contactId?: string | null;
+      conversationId?: string | null;
+      dueDate?: Date | null;
+      assignedToId?: string | null;
+      agentId?: string | null;
+    },
+  ) {
+    if (input.cardId) await this.loadCard(input.cardId, organizationId);
+    const task = await this.prisma.task.create({
+      data: {
+        organizationId,
+        title: input.title,
+        cardId: input.cardId ?? null,
+        contactId: input.contactId ?? null,
+        conversationId: input.conversationId ?? null,
+        assignedToId: input.assignedToId ?? null,
+        dueDate: input.dueDate ?? null,
+        metadata: input.agentId ? { sdrAgentId: input.agentId } : {},
+      },
+    });
+    this.realtime.emitToOrg(organizationId, 'task:created', { task });
+    return task;
+  }
+
+  /**
+   * Handoff humano: tira a conversa do modo bot (status OPEN) para o humano
+   * assumir; a IA cala enquanto houver atividade humana. Mantém a saída de
+   * emergência exigida nas condições de segurança da Fase 2.5.
+   */
+  async handoffToHuman(
+    conversationId: string,
+    organizationId: string,
+    input: { reason?: string | null; assignedToId?: string | null },
+  ) {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conv || conv.organizationId !== organizationId) {
+      throw new NotFoundException('Conversation not found');
+    }
+    const updated = await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        status: 'OPEN',
+        ...(input.assignedToId ? { assignedToId: input.assignedToId } : {}),
+      },
+    });
+    this.realtime.emitToOrg(organizationId, 'conversation:handoff', {
+      conversationId,
+      reason: input.reason ?? null,
+    });
+    return updated;
+  }
+
   /**
    * Gera uma Cobrança Pix a partir de um Card · puxa Contact (nome/email/telefone)
    * e Card.value como valor default. Body permite override de tudo.
