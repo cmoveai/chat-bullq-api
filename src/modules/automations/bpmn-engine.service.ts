@@ -140,6 +140,22 @@ export class BpmnEngine {
       const triggerNode = this.findTriggerNode(config.nodes, event.type);
       if (!triggerNode) continue;
 
+      // Idempotência: se já houve execução pra (automation, evento), NÃO
+      // re-roda — reprocessar o mesmo comentário/webhook não pode disparar
+      // o flow nem reenviar DM duplicada (uq automationId+externalEventId).
+      const alreadyRan = await this.prisma.automationExecution
+        .findUnique({
+          where: {
+            automationId_externalEventId: {
+              automationId: automation.id,
+              externalEventId: event.externalEventId,
+            },
+          },
+          select: { id: true },
+        })
+        .catch(() => null);
+      if (alreadyRan) continue;
+
       await this.runFlow(automation, config, triggerNode, event).catch((err) => {
         this.logger.error(
           `BPMN flow ${automation.id} crashed: ${err.message}`,
