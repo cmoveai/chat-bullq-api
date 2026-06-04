@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ChatbotFlowsController } from './chatbot-flows/chatbot-flows.controller';
 import { ChatbotFlowsService } from './chatbot-flows/chatbot-flows.service';
+import { ChatbotSimulationService } from './chatbot-flows/chatbot-simulation.service';
 import { ChatbotFlowsRepository } from './chatbot-flows/chatbot-flows.repository';
 import { ChatbotSessionService } from './session/chatbot-session.service';
 import { ChatbotEngineService } from './engine/chatbot-engine.service';
@@ -25,6 +26,7 @@ import { PipelinesModule } from '../pipelines/pipelines.module';
   controllers: [ChatbotFlowsController],
   providers: [
     ChatbotFlowsService,
+    ChatbotSimulationService,
     ChatbotFlowsRepository,
     ChatbotSessionService,
     ChatbotEngineService,

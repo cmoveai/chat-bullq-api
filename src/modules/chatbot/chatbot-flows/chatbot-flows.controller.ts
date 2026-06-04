@@ -4,8 +4,9 @@ import {
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { ChatbotFlowsService } from './chatbot-flows.service';
+import { ChatbotSimulationService } from './chatbot-simulation.service';
 import {
-  CreateChatbotFlowDto, UpdateChatbotFlowDto, SaveNodesDto, LinkChannelsDto,
+  CreateChatbotFlowDto, UpdateChatbotFlowDto, SaveNodesDto, LinkChannelsDto, SimulateFlowDto,
 } from './dto/create-chatbot-flow.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
 import { CurrentOrg, Roles } from '../../../common/decorators';
@@ -15,7 +16,10 @@ import { CurrentOrg, Roles } from '../../../common/decorators';
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
 @Controller('chatbot-flows')
 export class ChatbotFlowsController {
-  constructor(private readonly service: ChatbotFlowsService) {}
+  constructor(
+    private readonly service: ChatbotFlowsService,
+    private readonly simulation: ChatbotSimulationService,
+  ) {}
 
   @Post()
   @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
@@ -62,5 +66,12 @@ export class ChatbotFlowsController {
   @ApiOperation({ summary: 'Link flow to channels' })
   linkChannels(@Param('id') id: string, @CurrentOrg('id') orgId: string, @Body() dto: LinkChannelsDto) {
     return this.service.linkChannels(id, orgId, dto.channelIds);
+  }
+
+  @Post(':id/simulate')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
+  @ApiOperation({ summary: 'Simula um flow sem canal real / sem envio público' })
+  simulate(@Param('id') id: string, @CurrentOrg('id') orgId: string, @Body() dto: SimulateFlowDto) {
+    return this.simulation.simulate(id, orgId, dto);
   }
 }

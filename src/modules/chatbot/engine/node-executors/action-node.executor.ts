@@ -48,6 +48,18 @@ export class ActionNodeExecutor implements NodeExecutor {
       (typeof ctx.nodeData?.reason === 'string' && ctx.nodeData.reason.trim()) ||
       `chatbot:${ctx.session.flowId}`;
 
+    // Simulação (dry_run): NÃO muta o CRM. Resolve o card só para reportar se a
+    // ação teria alvo, registra 'simulated' e segue o flow sem efeito colateral.
+    if (ctx.dryRun) {
+      let note: string | undefined;
+      if (['SET_QUALIFICATION', 'SET_LEAD_SCORE', 'MOVE_CARD_STAGE'].includes(action)) {
+        const card = await this.resolveCard(ctx, org, conv.contactId);
+        if (!card) note = 'sem card (simulado)';
+      }
+      await this.log(org, ctx, action, 'simulated', note);
+      return result;
+    }
+
     try {
       switch (action) {
         case 'SAVE_CONTACT':

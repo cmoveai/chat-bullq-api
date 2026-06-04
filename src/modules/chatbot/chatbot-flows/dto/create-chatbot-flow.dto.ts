@@ -53,3 +53,17 @@ export class LinkChannelsDto {
   @IsString({ each: true })
   channelIds: string[];
 }
+
+export class SimulateFlowDto {
+  @ApiPropertyOptional({ example: 'oi, quero saber preço' })
+  @IsOptional() @IsString() message?: string;
+
+  @ApiPropertyOptional({ description: 'Conversa de teste do tenant. Sem ela, cria efêmera.' })
+  @IsOptional() @IsString() conversationId?: string;
+
+  @ApiPropertyOptional({ description: 'Variáveis iniciais da sessão' })
+  @IsOptional() @IsObject() variables?: Record<string, any>;
+
+  @ApiPropertyOptional({ default: true, description: 'true=só simula; false=executa CRM pela camada segura' })
+  @IsOptional() @IsBoolean() dryRun?: boolean;
+}

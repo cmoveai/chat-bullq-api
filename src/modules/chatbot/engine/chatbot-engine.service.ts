@@ -59,6 +59,7 @@ export class ChatbotEngineService {
     channelId: string,
     flowId: string,
     contactExternalId: string,
+    dryRun = false,
   ): Promise<EngineResult> {
     const flow = await this.flowsRepo.findById(flowId);
     if (!flow || flow.deletedAt || !flow.isActive || !flow.nodes.length) {
@@ -71,7 +72,7 @@ export class ChatbotEngineService {
       firstId = edges?.[0]?.targetNodeId || startNode.id;
     }
     await this.sessionService.create(conversationId, flow.id, firstId);
-    return this.processMessage(conversationId, channelId, contactExternalId, '');
+    return this.processMessage(conversationId, channelId, contactExternalId, '', dryRun);
   }
 
   async processMessage(
@@ -79,6 +80,7 @@ export class ChatbotEngineService {
     channelId: string,
     contactExternalId: string,
     incomingText: string,
+    dryRun = false,
   ): Promise<EngineResult> {
     const allMessages: EngineResult['messages'] = [];
     let transferToHuman = false;
@@ -162,6 +164,7 @@ export class ChatbotEngineService {
         conversationId,
         channelId,
         contactExternalId,
+        dryRun,
       };
 
       const result = await executor.execute(ctx);

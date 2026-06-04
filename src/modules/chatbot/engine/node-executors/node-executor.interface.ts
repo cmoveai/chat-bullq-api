@@ -8,6 +8,9 @@ export interface NodeExecutionContext {
   conversationId: string;
   channelId: string;
   contactExternalId: string;
+  /** Simulação: quando true, ACTION nodes NÃO mutam o CRM — só registram o
+   *  que teria acontecido (status 'simulated'). Nada externo é enviado. */
+  dryRun?: boolean;
 }
 
 export interface NodeExecutionResult {
