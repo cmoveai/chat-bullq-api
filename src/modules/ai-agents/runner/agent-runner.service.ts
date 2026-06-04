@@ -128,6 +128,7 @@ export class AiAgentRunnerService {
       );
 
     const startedAt = Date.now();
+    const knowledgeBase = await this.loadKnowledgeBase(agent.id);
     const messages = this.promptBuilder.buildMessages({
       organization,
       agent,
@@ -141,6 +142,7 @@ export class AiAgentRunnerService {
       triggerMessage,
       skillInstructions,
       catalog,
+      knowledgeBase,
     });
 
     const tools = llmTools;
@@ -596,6 +598,23 @@ export class AiAgentRunnerService {
    *   customToolsByName  — DB rows for HTTP tools, used by the executor
    *   skillInstructions  — prompt fragments to append to system message
    */
+  /**
+   * Carrega o conteúdo das knowledge bases ligadas ao agente (modular: só os
+   * docs daquele agente). Fonte versionada no repo docs/knowledge-base; aqui
+   * lê o que foi seedado em knowledge_bases. Vazio = sem KB ligada.
+   */
+  private async loadKnowledgeBase(agentId: string): Promise<string | undefined> {
+    const links = await this.prisma.agentKnowledgeBase.findMany({
+      where: { agentId, knowledgeBase: { deletedAt: null } },
+      include: { knowledgeBase: { select: { name: true, content: true } } },
+      orderBy: { knowledgeBaseId: 'asc' },
+    });
+    if (!links.length) return undefined;
+    return links
+      .map((l) => `## ${l.knowledgeBase.name}\n\n${l.knowledgeBase.content}`)
+      .join('\n\n---\n\n');
+  }
+
   private async resolveToolsAndSkills(
     agentId: string,
     kind: 'ORCHESTRATOR' | 'WORKER',

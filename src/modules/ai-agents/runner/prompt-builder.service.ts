@@ -22,6 +22,9 @@ export interface PromptContext {
   triggerMessage: Message;
   /** Extra prompt fragments contributed by the agent's active skills. */
   skillInstructions?: string[];
+  /** Conteúdo das knowledge bases ligadas ao agente (injetado modularmente —
+   *  fonte é o repo docs/knowledge-base; o prompt fica enxuto e referencia). */
+  knowledgeBase?: string;
   /** Compact product catalog for sales agents — name + slug + 1 line each.
    *  Full pitch is fetched on demand via the getProductPitch skill. */
   catalog?: Array<{
@@ -147,6 +150,13 @@ Como agir:
 - \`transferToHuman\` só se NEM você nem outro worker conseguem resolver — e nesse caso explique o motivo no campo \`reason\` ("falhei ao executar X porque Y").
 <% } else { %>
 - Se a demanda fugir do seu escopo, use \`transferToHuman\` com motivo claro.
+<% } %>
+<% if (it.knowledgeBase) { %>
+
+═══ Base de conhecimento ═══
+Use SOMENTE as informações abaixo como fonte de verdade sobre a plataforma. NÃO invente o que não está aqui. Respeite os blocos "O que NÃO prometer ainda".
+
+<%= it.knowledgeBase %>
 <% } %>
 <% if (it.skillInstructions && it.skillInstructions.length > 0) { %>
 
