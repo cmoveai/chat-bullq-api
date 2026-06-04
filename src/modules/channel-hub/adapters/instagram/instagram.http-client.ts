@@ -6,6 +6,7 @@ import { EncryptionService } from '../../../../common/crypto/encryption.service'
 interface InstagramConfig {
   accessToken: string;
   igBusinessId?: string;
+  pageId?: string;
   appSecret?: string;
   apiVersion?: string;
 }
@@ -23,8 +24,54 @@ export class InstagramHttpClient {
       // decrypt: aceita token legado em texto puro ou cifrado (enc:v1:)
       accessToken: this.encryption.decrypt(rawToken) ?? rawToken,
       igBusinessId: config.igBusinessId || config.igUserId,
+      pageId: config.pageId,
       appSecret: config.appSecret,
       apiVersion: config.apiVersion || 'v21.0',
+    };
+  }
+
+  /**
+   * Define a superfície de API de ENVIO pelo tipo de token. As duas rotas de
+   * conexão do Instagram usam tokens e endpoints diferentes:
+   *
+   *  - Instagram Login API → token `IGAA…` · `graph.instagram.com` · POST /me/messages
+   *  - Rota Página/Facebook → token `EAA…`  · `graph.facebook.com`  · POST /<PAGE_ID>/messages
+   *
+   * O @eixxohub foi conectado pela rota Página (token EAA via system user), por
+   * isso `graph.instagram.com` recusava o envio com `#190 Cannot parse access
+   * token`. A leitura (enrichment) segue best-effort e não bloqueia o envio.
+   */
+  private buildSendClient(channel: Channel): {
+    client: AxiosInstance;
+    path: string;
+    surface: 'instagram' | 'facebook';
+  } {
+    const cfg = this.getConfig(channel);
+    const isInstagramLogin = (cfg.accessToken || '').startsWith('IGAA');
+    if (isInstagramLogin) {
+      return {
+        client: axios.create({
+          baseURL: `https://graph.instagram.com/${cfg.apiVersion}`,
+          params: { access_token: cfg.accessToken },
+          timeout: 30000,
+        }),
+        path: '/me/messages',
+        surface: 'instagram',
+      };
+    }
+    if (!cfg.pageId) {
+      throw new Error(
+        'Instagram (rota Facebook): canal sem pageId no config — necessário para enviar.',
+      );
+    }
+    return {
+      client: axios.create({
+        baseURL: `https://graph.facebook.com/${cfg.apiVersion}`,
+        params: { access_token: cfg.accessToken },
+        timeout: 30000,
+      }),
+      path: `/${cfg.pageId}/messages`,
+      surface: 'facebook',
     };
   }
 
@@ -64,9 +111,14 @@ export class InstagramHttpClient {
     channel: Channel,
     payload: Record<string, any>,
   ): Promise<any> {
-    const client = this.createClient(channel);
+    const { client, path, surface } = this.buildSendClient(channel);
+    // Na rota Facebook o envio dentro da janela de 24h exige messaging_type.
+    const body =
+      surface === 'facebook' && !payload.messaging_type
+        ? { messaging_type: 'RESPONSE', ...payload }
+        : payload;
     try {
-      const { data } = await client.post('/me/messages', payload);
+      const { data } = await client.post(path, body);
       return data;
     } catch (err: any) {
       throw this.wrapGraphError(err, 'sendMessage');
@@ -84,9 +136,9 @@ export class InstagramHttpClient {
     commentId: string,
     text: string,
   ): Promise<any> {
-    const client = this.createClient(channel);
+    const { client, path } = this.buildSendClient(channel);
     try {
-      const { data } = await client.post('/me/messages', {
+      const { data } = await client.post(path, {
         recipient: { comment_id: commentId },
         message: { text },
       });
