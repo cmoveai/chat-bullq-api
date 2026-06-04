@@ -6,4 +6,7 @@ export interface ChatbotSession {
   waitingForInput: boolean;
   startedAt: string;
   lastActivityAt: string;
+  /** DELAY temporizado: nó onde a sessão pausou e quando deve retomar. */
+  delayNodeId?: string | null;
+  resumeAt?: string | null;
 }

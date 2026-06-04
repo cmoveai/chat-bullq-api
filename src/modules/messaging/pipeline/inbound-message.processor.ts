@@ -365,7 +365,10 @@ export class InboundMessageProcessor extends WorkerHost {
       // instead of seeing "[audio]" and apologizing it can't listen. Cost
       // is ~$0.006/min — predictable and pays for itself the moment the
       // bot answers a single audio without bouncing the customer to text.
-      if (!isEcho && !routedToChatbot) {
+      // Precedência (Fase 3 · Fatia 2): sessão de chatbot ATIVA bloqueia a IA
+      // mesmo quando a conversa não foi reroteada neste turno (ex.: sessão viva
+      // mas status OPEN). Nunca duas respostas pra mesma mensagem.
+      if (!isEcho && !routedToChatbot && !chatbotActive) {
         const dispatch = async () => {
           // Transcrição de áudio desabilitada temporariamente · OPENAI_API_KEY
           // do .env é OpenRouter (sk-or-v1-*) e Whisper só funciona com chave

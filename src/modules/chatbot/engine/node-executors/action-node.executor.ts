@@ -48,6 +48,37 @@ export class ActionNodeExecutor implements NodeExecutor {
       (typeof ctx.nodeData?.reason === 'string' && ctx.nodeData.reason.trim()) ||
       `chatbot:${ctx.session.flowId}`;
 
+    // Controle de fluxo / estado de sessão — rodam em QUALQUER modo (inclusive
+    // dry_run), pois não mutam o CRM e a simulação precisa seguir o caminho real.
+    if (action === 'SET_VARIABLE') {
+      const name =
+        (typeof ctx.nodeData?.name === 'string' && ctx.nodeData.name.trim()) ||
+        (typeof ctx.nodeData?.variable === 'string' && ctx.nodeData.variable.trim()) ||
+        '';
+      if (!name) {
+        await this.log(org, ctx, action, 'skipped', 'sem nome de variável');
+        return result;
+      }
+      const raw = ctx.nodeData?.value;
+      const value = typeof raw === 'string' ? interpolate(raw, ctx.session.variables) : raw;
+      result.updatedVariables = { [name]: value };
+      await this.log(org, ctx, action, 'ok', `${name}=${String(value)}`);
+      return result;
+    }
+
+    if (action === 'JUMP') {
+      const target =
+        (typeof ctx.nodeData?.targetNodeId === 'string' && ctx.nodeData.targetNodeId.trim()) || '';
+      if (!target) {
+        await this.log(org, ctx, action, 'skipped', 'sem targetNodeId');
+        return result; // segue pelo edge normal
+      }
+      result.nextNodeId = target;
+      result.isJump = true;
+      await this.log(org, ctx, action, 'ok', `→ ${target}`);
+      return result;
+    }
+
     // Simulação (dry_run): NÃO muta o CRM. Resolve o card só para reportar se a
     // ação teria alvo, registra 'simulated' e segue o flow sem efeito colateral.
     if (ctx.dryRun) {
@@ -116,6 +147,9 @@ export class ActionNodeExecutor implements NodeExecutor {
           });
           break;
         }
+        case 'ASSIGN_AI_AGENT':
+          await this.assignAiAgent(ctx, org, conv.contactId);
+          break;
         case 'HANDOFF':
           await this.pipelines.handoffToHuman(ctx.conversationId, org, { reason });
           result.transferToHuman = true;
@@ -131,6 +165,36 @@ export class ActionNodeExecutor implements NodeExecutor {
       await this.log(org, ctx, action, 'error', String(err?.message ?? err));
     }
     return result;
+  }
+
+  /**
+   * Atribui um agente IA à conversa (e ao card, se houver). NÃO ativa IA
+   * pública, NÃO liga o canal, NÃO cria ai_agent_channels e NÃO dispara
+   * resposta — só registra o agente responsável no contexto. O agente precisa
+   * pertencer ao tenant (impede agente de outra org / CMOVE no EIXXO). Os
+   * allowed_tools do agente continuam governando o que ele pode fazer quando
+   * (e se) for executado pela camada própria — aqui nada é executado.
+   */
+  private async assignAiAgent(
+    ctx: NodeExecutionContext,
+    org: string,
+    contactId: string | null,
+  ): Promise<void> {
+    const agentId = typeof ctx.nodeData?.agentId === 'string' ? ctx.nodeData.agentId.trim() : '';
+    if (!agentId) throw new Error('sem agentId');
+    const agent = await this.prisma.aiAgent.findFirst({
+      where: { id: agentId, organizationId: org },
+      select: { id: true },
+    });
+    if (!agent) throw new Error('agente não pertence ao tenant');
+    await this.prisma.conversation.update({
+      where: { id: ctx.conversationId },
+      data: { activeAgentId: agent.id },
+    });
+    const card = await this.resolveCard(ctx, org, contactId);
+    if (card) {
+      await this.prisma.card.update({ where: { id: card.id }, data: { sdrAgentId: agent.id } });
+    }
   }
 
   private async resolveCard(

@@ -21,6 +21,11 @@ export interface EngineResult {
   transferToHuman: boolean;
   transferDepartmentId?: string;
   sessionEnded: boolean;
+  /** DELAY: quando setado, a sessão está pausada e o caller deve reagendar a
+   *  retomada (process-bot com texto vazio) daqui a `delaySeconds`. */
+  delaySeconds?: number;
+  /** Estado final das variáveis da sessão (sobrevive ao destroy no END_FLOW). */
+  variables?: Record<string, any>;
 }
 
 @Injectable()
@@ -60,6 +65,7 @@ export class ChatbotEngineService {
     flowId: string,
     contactExternalId: string,
     dryRun = false,
+    simulateMode = false,
   ): Promise<EngineResult> {
     const flow = await this.flowsRepo.findById(flowId);
     if (!flow || flow.deletedAt || !flow.isActive || !flow.nodes.length) {
@@ -72,7 +78,7 @@ export class ChatbotEngineService {
       firstId = edges?.[0]?.targetNodeId || startNode.id;
     }
     await this.sessionService.create(conversationId, flow.id, firstId);
-    return this.processMessage(conversationId, channelId, contactExternalId, '', dryRun);
+    return this.processMessage(conversationId, channelId, contactExternalId, '', dryRun, simulateMode);
   }
 
   async processMessage(
@@ -81,6 +87,7 @@ export class ChatbotEngineService {
     contactExternalId: string,
     incomingText: string,
     dryRun = false,
+    simulateMode = false,
   ): Promise<EngineResult> {
     const allMessages: EngineResult['messages'] = [];
     let transferToHuman = false;
@@ -138,7 +145,9 @@ export class ChatbotEngineService {
     const nodesMap = new Map(flow.nodes.map((n) => [n.id, n]));
     let currentNodeId: string | null = session.currentNodeId;
     let iterations = 0;
-    const MAX_ITERATIONS = 20;
+    let jumpCount = 0;
+    const MAX_ITERATIONS = 30;
+    const MAX_JUMPS = 10;
 
     while (currentNodeId && iterations < MAX_ITERATIONS) {
       iterations++;
@@ -147,7 +156,48 @@ export class ChatbotEngineService {
 
       if (node.type === 'END_FLOW') {
         await this.sessionService.destroy(conversationId);
-        return { messages: allMessages, transferToHuman, transferDepartmentId, sessionEnded: true };
+        return { messages: allMessages, transferToHuman, transferDepartmentId, sessionEnded: true, variables: session.variables };
+      }
+
+      // DELAY: WAIT com `delaySeconds` vira pausa TEMPORIZADA (não espera input).
+      // Simulação sempre pula (não trava em tempo real). No fluxo real, pausa a
+      // sessão e sinaliza pro caller reagendar a retomada — idempotente.
+      const delaySeconds =
+        node.type === 'WAIT' ? Number((node.data as any)?.delaySeconds ?? 0) : 0;
+      if (delaySeconds > 0) {
+        const target = (node.edges as any[])?.[0]?.targetNodeId || null;
+        if (simulateMode) {
+          await this.logExec(conversationId, session.flowId, currentNodeId, 'DELAY', 'simulated', `pulou ${delaySeconds}s`);
+          currentNodeId = target;
+          if (currentNodeId) {
+            session = (await this.sessionService.update(conversationId, {
+              currentNodeId, waitingForInput: false, delayNodeId: null, resumeAt: null, variables: session.variables,
+            }))!;
+          }
+          continue;
+        }
+        const resumeAtMs = session.resumeAt ? Date.parse(session.resumeAt) : null;
+        const isThisDelay = session.delayNodeId === currentNodeId;
+        if (isThisDelay && resumeAtMs !== null && Date.now() >= resumeAtMs) {
+          await this.logExec(conversationId, session.flowId, currentNodeId, 'DELAY', 'ok', 'retomado');
+          currentNodeId = target;
+          if (currentNodeId) {
+            session = (await this.sessionService.update(conversationId, {
+              currentNodeId, waitingForInput: false, delayNodeId: null, resumeAt: null, variables: session.variables,
+            }))!;
+          }
+          continue;
+        }
+        if (isThisDelay && resumeAtMs !== null && Date.now() < resumeAtMs) {
+          // Mensagem chegou no meio do delay — segue pausado, sem reagendar.
+          return { messages: allMessages, transferToHuman: false, sessionEnded: false, variables: session.variables };
+        }
+        const resumeAt = new Date(Date.now() + delaySeconds * 1000).toISOString();
+        await this.sessionService.update(conversationId, {
+          currentNodeId, waitingForInput: false, delayNodeId: currentNodeId, resumeAt, variables: session.variables,
+        });
+        await this.logExec(conversationId, session.flowId, currentNodeId, 'DELAY', 'ok', `pausado ${delaySeconds}s`);
+        return { messages: allMessages, transferToHuman: false, sessionEnded: false, delaySeconds, variables: session.variables };
       }
 
       const executor = this.executors.get(node.type);
@@ -170,6 +220,16 @@ export class ChatbotEngineService {
       const result = await executor.execute(ctx);
       allMessages.push(...result.sendMessages);
 
+      // JUMP/goto loop-guard: limita saltos por execução. Estouro = para e loga.
+      if (result.isJump) {
+        jumpCount++;
+        if (jumpCount > MAX_JUMPS) {
+          this.logger.warn(`JUMP loop-guard (conv ${conversationId}): >${MAX_JUMPS} saltos`);
+          await this.logExec(conversationId, session.flowId, currentNodeId, 'JUMP', 'error', `loop-guard: >${MAX_JUMPS} saltos`);
+          break;
+        }
+      }
+
       if (result.updatedVariables) {
         Object.assign(session.variables, result.updatedVariables);
       }
@@ -178,7 +238,7 @@ export class ChatbotEngineService {
         transferToHuman = true;
         transferDepartmentId = result.transferDepartmentId;
         await this.sessionService.destroy(conversationId);
-        return { messages: allMessages, transferToHuman, transferDepartmentId, sessionEnded: true };
+        return { messages: allMessages, transferToHuman, transferDepartmentId, sessionEnded: true, variables: session.variables };
       }
 
       if (result.waitForInput) {
@@ -187,7 +247,7 @@ export class ChatbotEngineService {
           waitingForInput: true,
           variables: session.variables,
         });
-        return { messages: allMessages, transferToHuman: false, sessionEnded: false };
+        return { messages: allMessages, transferToHuman: false, sessionEnded: false, variables: session.variables };
       }
 
       currentNodeId = result.nextNodeId;
@@ -204,8 +264,38 @@ export class ChatbotEngineService {
       this.logger.warn(`Max iterations reached for conversation ${conversationId}`);
     }
 
+    const finalVars = { ...session.variables };
     await this.sessionService.destroy(conversationId);
-    return { messages: allMessages, transferToHuman, transferDepartmentId, sessionEnded: true };
+    return { messages: allMessages, transferToHuman, transferDepartmentId, sessionEnded: true, variables: finalVars };
+  }
+
+  /** Log mínimo de eventos do engine (DELAY, JUMP-guard) em chatbot_flow_executions. */
+  private async logExec(
+    conversationId: string,
+    flowId: string,
+    currentNode: string | null,
+    action: string,
+    status: string,
+    error?: string,
+  ): Promise<void> {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { organizationId: true },
+    });
+    if (!conv) return;
+    await this.prisma.chatbotFlowExecution
+      .create({
+        data: {
+          organizationId: conv.organizationId,
+          flowId,
+          conversationId,
+          currentNode,
+          action,
+          status,
+          error: error ?? null,
+        },
+      })
+      .catch(() => undefined);
   }
 
   /**

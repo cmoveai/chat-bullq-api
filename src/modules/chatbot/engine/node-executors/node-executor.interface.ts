@@ -20,6 +20,8 @@ export interface NodeExecutionResult {
   updatedVariables?: Record<string, any>;
   transferToHuman?: boolean;
   transferDepartmentId?: string;
+  /** JUMP/goto: o nextNodeId é um salto explícito (conta pro loop-guard). */
+  isJump?: boolean;
 }
 
 export interface NodeExecutor {

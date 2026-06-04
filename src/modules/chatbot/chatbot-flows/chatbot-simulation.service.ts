@@ -136,6 +136,7 @@ export class ChatbotSimulationService {
         'sim',
         input.message ?? '',
         dryRun,
+        true, // simulateMode: DELAY é pulado (não espera tempo real)
       );
 
       messages = result.messages.map((m) => ({
@@ -144,10 +145,11 @@ export class ChatbotSimulationService {
         simulated: true as const,
       }));
 
-      // Sessão sobrevive só se o flow pausou esperando input.
+      // Sessão sobrevive só se o flow pausou esperando input; o estado final das
+      // variáveis vem do EngineResult (sobrevive ao destroy no END_FLOW).
       const liveSession = await this.session.get(conversationId);
       currentNode = liveSession?.currentNodeId ?? null;
-      variables = liveSession?.variables ?? variables;
+      variables = result.variables ?? liveSession?.variables ?? variables;
       status = result.sessionEnded ? 'ended' : 'waiting';
     } catch (err: any) {
       this.logger.warn(`Simulação do flow ${flow.id} falhou: ${err?.message}`);
