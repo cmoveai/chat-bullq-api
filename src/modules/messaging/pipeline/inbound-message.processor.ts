@@ -250,24 +250,49 @@ export class InboundMessageProcessor extends WorkerHost {
         );
       }
 
-      // BPMN flows · WhatsApp inbound (não-echo) dispara trigger WA_MESSAGE.
-      // Best-effort · não bloqueia pipeline mesmo se falhar.
-      if (!isEcho && message.channelType !== ChannelType.INSTAGRAM) {
+      // BPMN flows · inbound (não-echo) dispara o motor. Instagram → IG_DM,
+      // WhatsApp → WA_MESSAGE. Best-effort · não bloqueia o pipeline se falhar.
+      // Só roda se a org tiver uma automation ativa escutando esse trigger
+      // (opt-in), então não conflita com a IA/chatbot por padrão.
+      if (!isEcho) {
         const textContent = (message.content as any)?.text ?? '';
-        this.bpmnEngine
-          .handleTrigger({
-            type: 'WA_MESSAGE',
-            channelId,
-            organizationId,
-            contactId,
-            externalEventId: message.externalMessageId,
-            text: typeof textContent === 'string' ? textContent : String(textContent ?? ''),
-          })
-          .catch((err) =>
-            this.logger.warn(
-              `BpmnEngine WA_MESSAGE failed for ${message.externalMessageId}: ${err.message}`,
-            ),
-          );
+        const text =
+          typeof textContent === 'string' ? textContent : String(textContent ?? '');
+        if (message.channelType === ChannelType.INSTAGRAM) {
+          this.bpmnEngine
+            .handleTrigger({
+              type: 'IG_DM',
+              channelId,
+              organizationId,
+              contactId,
+              conversationId,
+              externalEventId: message.externalMessageId,
+              externalContactId: message.externalContactId,
+              text,
+              username:
+                message.senderName ?? message.contactName ?? undefined,
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `BpmnEngine IG_DM failed for ${message.externalMessageId}: ${err.message}`,
+              ),
+            );
+        } else {
+          this.bpmnEngine
+            .handleTrigger({
+              type: 'WA_MESSAGE',
+              channelId,
+              organizationId,
+              contactId,
+              externalEventId: message.externalMessageId,
+              text,
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `BpmnEngine WA_MESSAGE failed for ${message.externalMessageId}: ${err.message}`,
+              ),
+            );
+        }
       }
 
       this.realtimeGateway.emitToChannel(channelId, 'message:new', {
