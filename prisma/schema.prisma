@@ -205,6 +205,7 @@ model Organization {
   tasks         Task[]
   automations   Automation[]
   knowledgeBases KnowledgeBase[]
+  socialInteractions SocialInteraction[]
 
   @@map("organizations")
 }
@@ -284,6 +285,7 @@ model Channel {
   syncJobs        ChannelSyncJob[]
   channelAgents   ChannelAgent[]
   aiAgentChannels AiAgentChannel[]
+  socialInteractions SocialInteraction[]
   automations     Automation[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
@@ -413,6 +415,7 @@ model Contact {
   conversations Conversation[]
   tags          ContactTag[]
   aiMemories    AiAgentMemory[]
+  socialInteractions SocialInteraction[]
   cards         Card[]           @relation("CardContact")
   tasks         Task[]
 
@@ -494,6 +497,7 @@ model Conversation {
   aiRuns        AiAgentRun[]
   aiHandoffs    AiAgentHandoff[]
   reads         ConversationRead[]
+  socialInteractions SocialInteraction[]
   cards         Card[]                 @relation("CardConversation")
   tasks         Task[]
 
@@ -566,6 +570,7 @@ model Message {
   status         MessageStatus      @default(QUEUED)
   senderName     String?            @map("sender_name")
   senderId       String?            @map("sender_id")
+  source         String?            // omnichannel: instagram_dm | instagram_comment | instagram_story_reply | instagram_mention | whatsapp | webchat | ad_ctwa | ad_ctig (TEXT, não enum — novos canais sem migration)
   sentAt         DateTime?          @map("sent_at")
   deliveredAt    DateTime?          @map("delivered_at")
   readAt         DateTime?          @map("read_at")
@@ -580,6 +585,36 @@ model Message {
   @@index([conversationId, createdAt], name: "idx_msg_conv_time")
   @@index([externalId], name: "idx_msg_external_id")
   @@map("messages")
+}
+
+// Interações sociais genéricas (omnichannel · Fase 1): comentários, menções,
+// respostas de story, reações — qualquer canal. NÃO é InstagramComment.
+model SocialInteraction {
+  id                    String   @id @default(cuid())
+  organizationId        String   @map("organization_id")
+  channelId             String   @map("channel_id")
+  contactId             String?  @map("contact_id")
+  conversationId        String?  @map("conversation_id")
+  interactionType       String   @map("interaction_type") // COMMENT | MENTION | STORY_REPLY | REACTION
+  externalInteractionId String   @map("external_interaction_id") // idempotência
+  mediaId               String?  @map("media_id")
+  parentId              String?  @map("parent_id")
+  fromUsername          String?  @map("from_username")
+  text                  String?
+  matchedKeyword        String?  @map("matched_keyword")
+  automationTriggered   Boolean  @default(false) @map("automation_triggered")
+  rawPayload            Json     @default("{}") @map("raw_payload")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@unique([channelId, externalInteractionId], name: "uq_social_channel_ext")
+  @@index([organizationId, interactionType], name: "idx_social_org_type")
+  @@index([organizationId, contactId], name: "idx_social_org_contact")
+  @@map("social_interactions")
 }
 
 // ─── Departments / Routing ───────────────────────
