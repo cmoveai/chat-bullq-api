@@ -84,6 +84,16 @@ export type TriggerEvent =
       externalContactId?: string;
       text: string;
       username?: string;
+    }
+  | {
+      type: 'FOLLOWUP_DUE';
+      organizationId: string;
+      cardId: string;
+      externalEventId: string;
+      channelId?: string;
+      conversationId?: string;
+      contactId?: string;
+      text?: string;
     };
 
 interface ExecutionContext {
@@ -143,6 +153,7 @@ export class BpmnEngine {
       IG_COMMENT: 'IG_COMMENT',
       WA_MESSAGE: 'WA_MESSAGE',
       IG_DM: 'IG_DM',
+      FOLLOWUP_DUE: 'FOLLOWUP_DUE',
     };
     const subtype = subtypeMap[eventType];
     return (
@@ -224,7 +235,7 @@ export class BpmnEngine {
 
   private async evalCondition(node: BpmnNode, ctx: ExecutionContext): Promise<boolean> {
     const subtype = node.data?.subtype;
-    const text = 'text' in ctx.event ? ctx.event.text : '';
+    const text = ('text' in ctx.event ? ctx.event.text : '') ?? '';
 
     if (subtype === 'KEYWORD') {
       const keywords: string[] = Array.isArray(node.data?.keywords) ? node.data.keywords : [];

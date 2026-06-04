@@ -199,6 +199,7 @@ model Organization {
   cards         Card[]
   cardStageHistory CardStageHistory[]
   sdrActionLog  SdrActionLog[]
+  followupExecutions FollowupExecution[]
   products      Product[]
   supportTickets SupportTicket[]
   subscription  Subscription?
@@ -1357,6 +1358,7 @@ model Card {
   cobrancas    Cobranca[]
   tasks        Task[]
   stageHistory CardStageHistory[]
+  followupExecutions FollowupExecution[]
 
   @@index([pipelineId, stageId, order])
   @@index([organizationId, status])
@@ -1364,6 +1366,33 @@ model Card {
   @@index([conversationId])
   @@index([organizationId, nextFollowupAt])
   @@map("cards")
+}
+
+/// Execução de follow-up (Fase 2.5). Uma linha por (card, vencimento) — o
+/// UNIQUE garante idempotência e serve de claim/lock entre runners. Estados:
+/// pending | processing | processed | failed | skipped. NÃO envia mensagem: o
+/// runner cria task + dispara o trigger interno FOLLOWUP_DUE; só uma automation
+/// explícita decide enviar algo.
+model FollowupExecution {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  cardId         String    @map("card_id")
+  dueAt          DateTime  @map("due_at")
+  status         String    @default("processing")
+  taskId         String?   @map("task_id")
+  errorMessage   String?   @map("error_message")
+  attempts       Int       @default(0)
+  processedAt    DateTime? @map("processed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, dueAt])
+  @@index([organizationId, status])
+  @@index([dueAt, status])
+  @@map("followup_executions")
 }
 
 /// Trilha de auditoria de TODA movimentação de stage/status de um card.
