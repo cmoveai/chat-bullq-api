@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { ChatbotFlowsRepository } from './chatbot-flows.repository';
+import { ChatbotExecutionsService } from './chatbot-executions.service';
 import { ChatbotEngineService } from '../engine/chatbot-engine.service';
 import { ChatbotSessionService } from '../session/chatbot-session.service';
 
@@ -20,15 +21,27 @@ export interface SimulateFlowInput {
   dryRun?: boolean;
 }
 
+export interface SimulateStep {
+  nodeId: string;
+  nodeType: string;
+  action: string | null;
+  status: string;
+  tool: string | null;
+  refs: { cardId?: string | null; taskId?: string | null; contactId?: string | null; agentId?: string | null; tagId?: string | null };
+  error: string | null;
+}
+
 export interface SimulateFlowResult {
   flowId: string;
-  executionId: string;
+  executionId: string | null;
   status: 'ended' | 'waiting' | 'error';
   currentNode: string | null;
   dryRun: boolean;
   /** Mensagens que o flow PRODUZIRIA — nunca enviadas a canal real. */
   messages: { type: string; content: Record<string, any>; simulated: true }[];
-  /** Trilha de ações do CRM (executadas ou simuladas), do chatbot_flow_executions. */
+  /** Histórico completo por nó (chatbot_execution_steps desta run). */
+  steps: SimulateStep[];
+  /** Trilha de ações (subconjunto de steps com ação: ACTION/DELAY/JUMP). */
   actions: { action: string | null; status: string; node: string | null; error: string | null }[];
   variables: Record<string, any>;
   errors: string[];
@@ -56,6 +69,7 @@ export class ChatbotSimulationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly flowsRepo: ChatbotFlowsRepository,
+    private readonly executions: ChatbotExecutionsService,
     private readonly engine: ChatbotEngineService,
     private readonly session: ChatbotSessionService,
   ) {}
@@ -98,23 +112,11 @@ export class ChatbotSimulationService {
       ephemeral = true;
     }
 
-    // Cabeçalho da execução (audit). createdAt = marco pra recortar as ações desta run.
-    const header = await this.prisma.chatbotFlowExecution.create({
-      data: {
-        organizationId,
-        flowId: flow.id,
-        conversationId,
-        currentNode: null,
-        action: 'SIMULATE',
-        status: 'started',
-      },
-      select: { id: true, createdAt: true },
-    });
-
     let status: SimulateFlowResult['status'] = 'ended';
     let messages: SimulateFlowResult['messages'] = [];
     let currentNode: string | null = null;
     let variables: Record<string, any> = input.variables ?? {};
+    let executionId: string | null = null;
     const errors: string[] = [];
 
     try {
@@ -144,6 +146,7 @@ export class ChatbotSimulationService {
         content: m.content,
         simulated: true as const,
       }));
+      executionId = result.executionId ?? null;
 
       // Sessão sobrevive só se o flow pausou esperando input; o estado final das
       // variáveis vem do EngineResult (sobrevive ao destroy no END_FLOW).
@@ -157,30 +160,28 @@ export class ChatbotSimulationService {
       errors.push(String(err?.message ?? err));
     }
 
-    // Trilha de ações desta run (ACTION nodes gravam em chatbot_flow_executions).
-    const actionRows = await this.prisma.chatbotFlowExecution.findMany({
-      where: {
-        conversationId,
-        flowId: flow.id,
-        id: { not: header.id },
-        createdAt: { gte: header.createdAt },
-      },
-      orderBy: { createdAt: 'asc' },
-      select: { action: true, status: true, currentNode: true, error: true },
-    });
-    const actions = actionRows.map((r) => ({
-      action: r.action,
-      status: r.status,
-      node: r.currentNode,
-      error: r.error,
+    // Histórico por nó (auditoria centralizada — o engine gravou os steps).
+    const stepRows = executionId
+      ? await this.prisma.chatbotExecutionStep.findMany({
+          where: { executionId },
+          orderBy: { startedAt: 'asc' },
+          select: {
+            nodeId: true, nodeType: true, action: true, status: true, tool: true,
+            errorMessage: true, cardId: true, taskId: true, contactId: true, agentId: true, tagId: true,
+          },
+        })
+      : [];
+    const steps: SimulateStep[] = stepRows.map((s) => ({
+      nodeId: s.nodeId, nodeType: s.nodeType, action: s.action, status: s.status, tool: s.tool,
+      refs: { cardId: s.cardId, taskId: s.taskId, contactId: s.contactId, agentId: s.agentId, tagId: s.tagId },
+      error: s.errorMessage,
     }));
-    for (const a of actions) {
-      if (a.status === 'error') errors.push(`${a.action}: ${a.error ?? 'erro'}`);
+    const actions = steps
+      .filter((s) => s.action)
+      .map((s) => ({ action: s.action, status: s.status, node: s.nodeId, error: s.error }));
+    for (const s of steps) {
+      if (s.status === 'failed') errors.push(`${s.action ?? s.nodeType}: ${s.error ?? 'erro'}`);
     }
-
-    await this.prisma.chatbotFlowExecution
-      .update({ where: { id: header.id }, data: { status, currentNode } })
-      .catch(() => undefined);
 
     // Limpeza: sempre destrói a sessão Redis; remove a conversa efêmera de teste.
     await this.session.destroy(conversationId).catch(() => undefined);
@@ -193,11 +194,12 @@ export class ChatbotSimulationService {
 
     return {
       flowId: flow.id,
-      executionId: header.id,
+      executionId,
       status,
       currentNode,
       dryRun,
       messages,
+      steps,
       actions,
       variables,
       errors,

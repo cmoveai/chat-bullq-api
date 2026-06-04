@@ -5,6 +5,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { ChatbotFlowsService } from './chatbot-flows.service';
 import { ChatbotSimulationService } from './chatbot-simulation.service';
+import { ChatbotExecutionsService } from './chatbot-executions.service';
 import {
   CreateChatbotFlowDto, UpdateChatbotFlowDto, SaveNodesDto, LinkChannelsDto, SimulateFlowDto,
 } from './dto/create-chatbot-flow.dto';
@@ -19,7 +20,46 @@ export class ChatbotFlowsController {
   constructor(
     private readonly service: ChatbotFlowsService,
     private readonly simulation: ChatbotSimulationService,
+    private readonly executions: ChatbotExecutionsService,
   ) {}
+
+  // ─── Auditoria / observabilidade (Fatia 3) ──────────────────────────────
+  // ATENÇÃO à ordem: rotas estáticas 'executions/...' antes de ':executionId'.
+
+  @Get('executions/errors')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
+  @ApiOperation({ summary: 'Últimos passos que falharam (todos os flows do tenant)' })
+  recentErrors(@CurrentOrg('id') orgId: string) {
+    return this.executions.recentErrors(orgId);
+  }
+
+  @Get('executions/stats/failing-nodes')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
+  @ApiOperation({ summary: 'Nós mais falhos (contagem de falhas por nó)' })
+  failingNodes(@CurrentOrg('id') orgId: string) {
+    return this.executions.failingNodes(orgId);
+  }
+
+  @Get('executions/by-conversation/:conversationId')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
+  @ApiOperation({ summary: 'Execuções de chatbot de uma conversa' })
+  byConversation(@Param('conversationId') conversationId: string, @CurrentOrg('id') orgId: string) {
+    return this.executions.listByConversation(conversationId, orgId);
+  }
+
+  @Get('executions/:executionId')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
+  @ApiOperation({ summary: 'Execução + histórico de passos por nó' })
+  getExecution(@Param('executionId') executionId: string, @CurrentOrg('id') orgId: string) {
+    return this.executions.getExecution(executionId, orgId);
+  }
+
+  @Get(':id/executions')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
+  @ApiOperation({ summary: 'Execuções de um flow' })
+  flowExecutions(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
+    return this.executions.listByFlow(id, orgId);
+  }
 
   @Post()
   @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)

@@ -17,6 +17,7 @@ import { ConditionNodeExecutor } from '../src/modules/chatbot/engine/node-execut
 import { WaitNodeExecutor } from '../src/modules/chatbot/engine/node-executors/wait-node.executor';
 import { TransferNodeExecutor } from '../src/modules/chatbot/engine/node-executors/transfer-node.executor';
 import { ActionNodeExecutor } from '../src/modules/chatbot/engine/node-executors/action-node.executor';
+import { ChatbotExecutionsService } from '../src/modules/chatbot/chatbot-flows/chatbot-executions.service';
 
 const ORG_ID = 'cmoqc75wn0001ny0703uwnnpl';
 const CHANNEL_ID = 'cmove_chan_wa_official';
@@ -149,6 +150,7 @@ async function main() {
     new WaitNodeExecutor(),
     new TransferNodeExecutor(),
     new ActionNodeExecutor(prisma as any, null as any),
+    new ChatbotExecutionsService(prisma as any),
   );
 
   const conv = `dogfood-${Date.now()}`;

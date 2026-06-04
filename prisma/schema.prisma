@@ -201,6 +201,7 @@ model Organization {
   sdrActionLog  SdrActionLog[]
   followupExecutions FollowupExecution[]
   chatbotFlowExecutions ChatbotFlowExecution[]
+  chatbotExecutionSteps ChatbotExecutionStep[]
   products      Product[]
   supportTickets SupportTicket[]
   subscription  Subscription?
@@ -709,6 +710,9 @@ model ChatbotFlowChannel {
 /// Log mínimo de execução de chatbot flow (Fase 3 Flow Builder). Uma linha por
 /// passo relevante (início do flow, ação de CRM, erro). Auditoria multi-tenant
 /// complementar à sessão (que vive só no Redis). RLS tenant_isolation.
+// RUN: um cabeçalho por execução de flow (uma sessão start→fim). Os passos por
+// nó vão em ChatbotExecutionStep. `status`: running | waiting | ended | failed |
+// cancelled. `dryRun` distingue simulação de execução real.
 model ChatbotFlowExecution {
   id             String   @id @default(cuid())
   organizationId String   @map("organization_id")
@@ -716,16 +720,59 @@ model ChatbotFlowExecution {
   conversationId String   @map("conversation_id")
   currentNode    String?  @map("current_node")
   action         String?
-  status         String   @default("ok") // started | ok | error | ended
+  status         String   @default("ok") // running | waiting | ended | failed | cancelled
   error          String?
+  dryRun         Boolean  @default(false) @map("dry_run")
+  triggerSource  String?  @map("trigger_source") // inbound | simulate | resume
+  finishedAt     DateTime? @map("finished_at")
   createdAt      DateTime @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  steps        ChatbotExecutionStep[]
 
   @@index([organizationId, createdAt])
   @@index([flowId, createdAt])
   @@index([conversationId, createdAt])
+  @@index([organizationId, status])
   @@map("chatbot_flow_executions")
+}
+
+// STEP: um registro por nó processado numa execução. Histórico completo +
+// correlação com refs externas (card/task/contact/agent/tag).
+model ChatbotExecutionStep {
+  id              String    @id @default(cuid())
+  executionId     String    @map("execution_id")
+  organizationId  String    @map("organization_id")
+  flowId          String    @map("flow_id")
+  conversationId  String    @map("conversation_id")
+  nodeId          String    @map("node_id")
+  nodeType        String    @map("node_type")
+  action          String?
+  status          String // started | success | failed | skipped | simulated
+  tool            String?
+  input           Json?
+  output          Json?
+  variablesBefore Json?     @map("variables_before")
+  variablesAfter  Json?     @map("variables_after")
+  errorMessage    String?   @map("error_message")
+  cardId          String?   @map("card_id")
+  taskId          String?   @map("task_id")
+  contactId       String?   @map("contact_id")
+  agentId         String?   @map("agent_id")
+  tagId           String?   @map("tag_id")
+  startedAt       DateTime  @default(now()) @map("started_at")
+  finishedAt      DateTime? @map("finished_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  execution    ChatbotFlowExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@index([organizationId, createdAt])
+  @@index([flowId, status])
+  @@index([conversationId, createdAt])
+  @@index([organizationId, status])
+  @@map("chatbot_execution_steps")
 }
 
 // ─── Quick Replies ───────────────────────────────

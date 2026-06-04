@@ -17,6 +17,7 @@ import { ConditionNodeExecutor } from '../src/modules/chatbot/engine/node-execut
 import { WaitNodeExecutor } from '../src/modules/chatbot/engine/node-executors/wait-node.executor';
 import { TransferNodeExecutor } from '../src/modules/chatbot/engine/node-executors/transfer-node.executor';
 import { ActionNodeExecutor } from '../src/modules/chatbot/engine/node-executors/action-node.executor';
+import { ChatbotExecutionsService } from '../src/modules/chatbot/chatbot-flows/chatbot-executions.service';
 
 const ORG_ID = 'cmoqc75wn0001ny0703uwnnpl';
 const prisma = new PrismaClient();
@@ -43,12 +44,14 @@ async function main() {
   const pipelines = new PipelinesService(prisma as any, realtimeStub);
   const session = new ChatbotSessionService(configStub);
   const flowsRepo = new ChatbotFlowsRepository(prisma as any);
+  const executions = new ChatbotExecutionsService(prisma as any);
   const engine = new ChatbotEngineService(
     session, flowsRepo, prisma as any,
     new MessageNodeExecutor(), new MenuNodeExecutor(), new ConditionNodeExecutor(),
     new WaitNodeExecutor(), new TransferNodeExecutor(), new ActionNodeExecutor(prisma as any, pipelines),
+    executions,
   );
-  const sim = new ChatbotSimulationService(prisma as any, flowsRepo, engine, session);
+  const sim = new ChatbotSimulationService(prisma as any, flowsRepo, executions, engine, session);
 
   const flowIds: string[] = [];
   let pipelineId = '', channelId = '', contactId = '', conversationId = '', cardId = '', agentId = '';
@@ -83,7 +86,7 @@ async function main() {
     check('V: SET_VARIABLE alterou variável (plano=growth)', v.variables?.plano === 'growth', JSON.stringify(v.variables));
     check('V: CONDITION usou a variável (ramo true → faixa=premium)', v.variables?.faixa === 'premium');
     check('V: JUMP pulou o ramo basic (faixa != basic)', v.variables?.faixa !== 'basic');
-    check('V: ações logadas (SET_VARIABLE x2 + JUMP)', ['SET_VARIABLE', 'JUMP'].every((a) => v.actions.some((x) => x.action === a && x.status === 'ok')), v.actions.map((x) => `${x.action}:${x.status}`).join(', '));
+    check('V: ações logadas (SET_VARIABLE x2 + JUMP)', ['SET_VARIABLE', 'JUMP'].every((a) => v.actions.some((x) => x.action === a && x.status === 'success')), v.actions.map((x) => `${x.action}:${x.status}`).join(', '));
     check('V: externalSend false + ended', v.externalSend === false && v.status === 'ended');
 
     // ── Flow D: DELAY pulado na simulação (não trava) ─────────────────────────
@@ -127,7 +130,7 @@ async function main() {
     const cardAfter = await prisma.card.findUnique({ where: { id: cardId }, select: { sdrAgentId: true } });
     check('A: dry_run=false atribui agente à conversa', convAfter?.activeAgentId === agentId);
     check('A: atribui agente ao card (sdrAgentId)', cardAfter?.sdrAgentId === agentId);
-    check('A: ação ASSIGN_AI_AGENT ok + externalSend false', a.actions.some((x) => x.action === 'ASSIGN_AI_AGENT' && x.status === 'ok') && a.externalSend === false);
+    check('A: ação ASSIGN_AI_AGENT success + externalSend false', a.actions.some((x) => x.action === 'ASSIGN_AI_AGENT' && x.status === 'success') && a.externalSend === false);
 
     // tenant guard: agente que não é do tenant → erro, sem atribuir
     const fAbad = await seedFlow('[e2e-f2] assign-bad', [
@@ -138,7 +141,7 @@ async function main() {
     flowIds.push(fAbad);
     const ab = await sim.simulate(fAbad, ORG_ID, { conversationId, dryRun: false });
     const convAfterBad = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { activeAgentId: true } });
-    check('A: agente de outro tenant é bloqueado (erro, sem trocar atribuição)', ab.actions.some((x) => x.action === 'ASSIGN_AI_AGENT' && x.status === 'error') && convAfterBad?.activeAgentId === agentId);
+    check('A: agente de outro tenant é bloqueado (failed, sem trocar atribuição)', ab.actions.some((x) => x.action === 'ASSIGN_AI_AGENT' && x.status === 'failed') && convAfterBad?.activeAgentId === agentId);
 
     // ── Flow L: JUMP em loop é contido pelo loop-guard (não trava) ────────────
     const fL = await seedFlow('[e2e-f2] jump-loop', [
@@ -150,7 +153,7 @@ async function main() {
     const tL = Date.now();
     const l = await sim.simulate(fL, ORG_ID, { conversationId, dryRun: true });
     check('L: JUMP em loop TERMINA (não trava, < 3s)', Date.now() - tL < 3000);
-    check('L: loop-guard registrou JUMP error', l.actions.some((x) => x.action === 'JUMP' && x.status === 'error'));
+    check('L: loop-guard registrou JUMP failed', l.actions.some((x) => x.action === 'JUMP' && x.status === 'failed'));
     check('L: terminou em status ended', l.status === 'ended');
 
     // ── CRM intacto onde dry_run foi usado (card não moveu de etapa) ──────────

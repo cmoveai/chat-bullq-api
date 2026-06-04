@@ -20,6 +20,7 @@ import { ConditionNodeExecutor } from '../src/modules/chatbot/engine/node-execut
 import { WaitNodeExecutor } from '../src/modules/chatbot/engine/node-executors/wait-node.executor';
 import { TransferNodeExecutor } from '../src/modules/chatbot/engine/node-executors/transfer-node.executor';
 import { ActionNodeExecutor } from '../src/modules/chatbot/engine/node-executors/action-node.executor';
+import { ChatbotExecutionsService } from '../src/modules/chatbot/chatbot-flows/chatbot-executions.service';
 
 const ORG_ID = 'cmoqc75wn0001ny0703uwnnpl';
 const FLOW_NAME = '[e2e-sim] Funil simulado';
@@ -38,6 +39,7 @@ async function main() {
   const pipelines = new PipelinesService(prisma as any, realtimeStub);
   const session = new ChatbotSessionService(configStub);
   const flowsRepo = new ChatbotFlowsRepository(prisma as any);
+  const executions = new ChatbotExecutionsService(prisma as any);
   const engine = new ChatbotEngineService(
     session,
     flowsRepo,
@@ -48,8 +50,9 @@ async function main() {
     new WaitNodeExecutor(),
     new TransferNodeExecutor(),
     new ActionNodeExecutor(prisma as any, pipelines),
+    executions,
   );
-  const sim = new ChatbotSimulationService(prisma as any, flowsRepo, engine, session);
+  const sim = new ChatbotSimulationService(prisma as any, flowsRepo, executions, engine, session);
 
   let pipelineId = '';
   let channelId = '';
@@ -134,14 +137,14 @@ async function main() {
     check('A: CRM intacto — leadScore inalterado', Number(cardA?.leadScore ?? 0) === Number(card.leadScore ?? 0));
     const taskA = await prisma.task.count({ where: { conversationId } });
     check('A: CRM intacto — nenhuma task criada', taskA === taskCountBefore);
-    const execA = await prisma.chatbotFlowExecution.findUnique({ where: { id: a.executionId } });
-    check('A: execução registrada (header)', !!execA && execA.flowId === flowId);
+    const execA = a.executionId ? await prisma.chatbotFlowExecution.findUnique({ where: { id: a.executionId } }) : null;
+    check('A: execução registrada (run)', !!execA && execA.flowId === flowId);
 
     // ── Test B: dry_run=false (muta pela camada segura) ────────────────────
     const b = await sim.simulate(flowId, ORG_ID, { message: 'oi', conversationId, dryRun: false });
     check('B: externalSend sempre false', b.externalSend === false);
     const bActs = b.actions.map((x) => `${x.action}:${x.status}`);
-    check('B: 3 ações executadas (ok)', ['MOVE_CARD_STAGE', 'SET_QUALIFICATION', 'CREATE_TASK'].every((act) => b.actions.some((x) => x.action === act && x.status === 'ok')), bActs.join(', '));
+    check('B: 3 ações executadas (success)', ['MOVE_CARD_STAGE', 'SET_QUALIFICATION', 'CREATE_TASK'].every((act) => b.actions.some((x) => x.action === act && x.status === 'success')), bActs.join(', '));
     const cardB = await prisma.card.findUnique({ where: { id: cardId } });
     check('B: card MOVEU pra Qualificado', cardB?.stageId === stQual.id);
     check('B: card QUALIFICADO', cardB?.qualificationStatus === 'QUALIFIED');
