@@ -13,6 +13,7 @@ enum OrgRole {
   OWNER
   ADMIN
   AGENT
+  PARTNER
 }
 
 enum GlobalRole {

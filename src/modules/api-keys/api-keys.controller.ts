@@ -14,7 +14,7 @@ export class ApiKeysController {
   constructor(private readonly service: ApiKeysService) {}
 
   @Post()
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Create a new API key (rawKey returned ONLY once)' })
   create(
     @Body() dto: CreateApiKeyDto,
@@ -25,14 +25,14 @@ export class ApiKeysController {
   }
 
   @Get()
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'List all API keys of the current organization (no rawKey)' })
   list(@CurrentOrg('id') organizationId: string) {
     return this.service.findAll(organizationId);
   }
 
   @Delete(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Revoke an API key' })
   revoke(@Param('id') id: string, @CurrentOrg('id') organizationId: string) {
     return this.service.revoke(id, organizationId);

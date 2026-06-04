@@ -53,7 +53,7 @@ export class KnowledgeBasesController {
   }
 
   @Post('text')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.AGENT)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.AGENT, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Create KB from raw text' })
   createFromText(
     @CurrentOrg('id') orgId: string,
@@ -63,7 +63,7 @@ export class KnowledgeBasesController {
   }
 
   @Post('upload')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.AGENT)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.AGENT, OrgRole.PARTNER)
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
@@ -79,7 +79,7 @@ export class KnowledgeBasesController {
   }
 
   @Patch(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.AGENT)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.AGENT, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Update KB metadata or content' })
   update(
     @Param('id') id: string,
@@ -90,14 +90,14 @@ export class KnowledgeBasesController {
   }
 
   @Delete(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Soft-delete KB' })
   remove(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.remove(id, orgId);
   }
 
   @Put(':id/agents')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Replace the list of agents linked to this KB' })
   linkAgents(
     @Param('id') id: string,

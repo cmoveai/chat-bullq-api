@@ -14,7 +14,7 @@ export class WhatsAppOnboardingController {
   constructor(private readonly onboarding: WhatsAppOnboardingService) {}
 
   @Post('embedded-signup')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({
     summary:
       'Conecta um número WhatsApp via Embedded Signup (Tech Provider). Recebe o code do FB Login + waba/phone IDs, troca por token, assina o app na WABA e cria o canal pra org.',

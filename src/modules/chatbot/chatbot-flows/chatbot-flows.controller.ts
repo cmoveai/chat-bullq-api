@@ -18,7 +18,7 @@ export class ChatbotFlowsController {
   constructor(private readonly service: ChatbotFlowsService) {}
 
   @Post()
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Create a chatbot flow' })
   create(@CurrentOrg('id') orgId: string, @Body() dto: CreateChatbotFlowDto) {
     return this.service.create(orgId, dto);
@@ -37,28 +37,28 @@ export class ChatbotFlowsController {
   }
 
   @Patch(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Update chatbot flow' })
   update(@Param('id') id: string, @CurrentOrg('id') orgId: string, @Body() dto: UpdateChatbotFlowDto) {
     return this.service.update(id, orgId, dto);
   }
 
   @Delete(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Delete chatbot flow' })
   remove(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.remove(id, orgId);
   }
 
   @Post(':id/nodes')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Save all nodes of a flow (replace)' })
   saveNodes(@Param('id') id: string, @CurrentOrg('id') orgId: string, @Body() dto: SaveNodesDto) {
     return this.service.saveNodes(id, orgId, dto.nodes);
   }
 
   @Post(':id/channels')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Link flow to channels' })
   linkChannels(@Param('id') id: string, @CurrentOrg('id') orgId: string, @Body() dto: LinkChannelsDto) {
     return this.service.linkChannels(id, orgId, dto.channelIds);

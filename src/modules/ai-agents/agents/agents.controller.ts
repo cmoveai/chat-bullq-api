@@ -53,7 +53,7 @@ export class AgentsController {
   }
 
   @Post()
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Create a new AI agent' })
   create(@CurrentOrg('id') orgId: string, @Body() dto: CreateAgentDto) {
     return this.service.create(orgId, dto);
@@ -72,7 +72,7 @@ export class AgentsController {
   }
 
   @Patch(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Update an AI agent' })
   update(
     @CurrentOrg('id') orgId: string,
@@ -83,14 +83,14 @@ export class AgentsController {
   }
 
   @Delete(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Soft-delete an AI agent' })
   remove(@CurrentOrg('id') orgId: string, @Param('id') id: string) {
     return this.service.softDelete(orgId, id);
   }
 
   @Post(':id/channels')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Assign agent to a channel (or update mode)' })
   assignChannel(
     @CurrentOrg('id') orgId: string,
@@ -101,7 +101,7 @@ export class AgentsController {
   }
 
   @Delete(':id/channels/:channelId')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Detach agent from a channel' })
   unassignChannel(
     @CurrentOrg('id') orgId: string,

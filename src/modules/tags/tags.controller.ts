@@ -24,7 +24,7 @@ export class TagsController {
   constructor(private readonly service: TagsService) {}
 
   @Post('conversation/:convId/tag/:tagId')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Attach tag to conversation' })
   addToConversation(
     @Param('convId') convId: string,
@@ -35,7 +35,7 @@ export class TagsController {
   }
 
   @Delete('conversation/:convId/tag/:tagId')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Remove tag from conversation' })
   removeFromConversation(
     @Param('convId') convId: string,
@@ -46,7 +46,7 @@ export class TagsController {
   }
 
   @Post('contact/:contactId/tag/:tagId')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Attach tag to contact' })
   addToContact(
     @Param('contactId') contactId: string,
@@ -57,7 +57,7 @@ export class TagsController {
   }
 
   @Delete('contact/:contactId/tag/:tagId')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Remove tag from contact' })
   removeFromContact(
     @Param('contactId') contactId: string,
@@ -68,7 +68,7 @@ export class TagsController {
   }
 
   @Post()
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Create tag' })
   create(@CurrentOrg('id') orgId: string, @Body() dto: CreateTagDto) {
     return this.service.create(orgId, dto);
@@ -81,7 +81,7 @@ export class TagsController {
   }
 
   @Patch(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Update tag' })
   update(
     @Param('id') id: string,
@@ -92,7 +92,7 @@ export class TagsController {
   }
 
   @Delete(':id')
-  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN, OrgRole.PARTNER)
   @ApiOperation({ summary: 'Delete tag' })
   remove(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
     return this.service.remove(id, orgId);
