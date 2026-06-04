@@ -198,6 +198,7 @@ model Organization {
   pipelines     Pipeline[]
   cards         Card[]
   cardStageHistory CardStageHistory[]
+  sdrActionLog  SdrActionLog[]
   products      Product[]
   supportTickets SupportTicket[]
   subscription  Subscription?
@@ -1386,6 +1387,31 @@ model CardStageHistory {
   @@index([cardId, createdAt])
   @@index([organizationId, createdAt])
   @@map("card_stage_history")
+}
+
+/// Log de auditoria das ações do SDR (agente IA) — uma linha por tool
+/// executada. Complementa card_stage_history (que é a timeline do card):
+/// aqui fica "o que o agente decidiu/fez", com motivo, contexto e before/after.
+/// Toda ação do SDR grava aqui (condição de segurança Fase 2.5).
+model SdrActionLog {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  agentId        String?  @map("agent_id")
+  cardId         String?  @map("card_id")
+  conversationId String?  @map("conversation_id")
+  actionType     String   @map("action_type")
+  reason         String?
+  context        Json     @default("{}")
+  before         Json?
+  after          Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([cardId, createdAt])
+  @@index([agentId, createdAt])
+  @@map("sdr_action_log")
 }
 
 // ─── Product Catalog ─────────────────────────────
