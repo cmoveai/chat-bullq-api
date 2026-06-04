@@ -27,6 +27,7 @@ import { ChannelSyncProcessor } from './sync/channel-sync.processor';
 import { CHANNEL_SYNC_QUEUE } from './sync/channel-sync.constants';
 import { MessagingModule } from '../messaging/messaging.module';
 import { AutomationsModule } from '../automations/automations.module';
+import { SocialInteractionsModule } from '../social-interactions/social-interactions.module';
 import { WebhookEventsService } from './webhook-events.service';
 import { WebhookThrottleGuard } from './webhook-throttle.guard';
 
@@ -47,6 +48,7 @@ import { WebhookThrottleGuard } from './webhook-throttle.guard';
     WhatsAppOfficialModule,
     InstagramModule,
     AutomationsModule,
+    SocialInteractionsModule,
     forwardRef(() => MessagingModule),
   ],
   controllers: [

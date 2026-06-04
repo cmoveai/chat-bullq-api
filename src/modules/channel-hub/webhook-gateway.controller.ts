@@ -19,6 +19,7 @@ import { Queue } from 'bullmq';
 import { Public } from '../../common/decorators';
 import { AutomationEngine } from '../automations/automation-engine.service';
 import { BpmnEngine } from '../automations/bpmn-engine.service';
+import { SocialInteractionsService } from '../social-interactions/social-interactions.service';
 import { ChannelAdapterRegistry } from './channel-adapter.registry';
 import { ChannelsService } from './channels/channels.service';
 import { WebhookEventsService } from './webhook-events.service';
@@ -36,6 +37,7 @@ export class WebhookGatewayController {
     private readonly webhookEvents: WebhookEventsService,
     private readonly automationEngine: AutomationEngine,
     private readonly bpmnEngine: BpmnEngine,
+    private readonly socialInteractions: SocialInteractionsService,
     @InjectQueue('inbound-messages') private readonly inboundQueue: Queue,
   ) {}
 
@@ -164,6 +166,20 @@ export class WebhookGatewayController {
       // Roda BPMN primeiro (config.nodes) e legacy depois (INSTAGRAM_DM_FROM_COMMENT)
       // · cada um filtra suas próprias automations · não conflita.
       for (const comment of parseResult.comments ?? []) {
+        // Persiste a interação social (genérico, idempotente, isolado por
+        // tenant via runWithTenant). Best-effort: não derruba o webhook.
+        void this.socialInteractions.record({
+          organizationId: channel.organizationId,
+          channelId: channel.id,
+          interactionType: 'COMMENT',
+          externalInteractionId: comment.externalCommentId,
+          mediaId: comment.mediaId,
+          parentId: comment.parentCommentId,
+          fromUsername: comment.contactUsername,
+          text: comment.text,
+          rawPayload: comment.rawPayload,
+        });
+
         this.bpmnEngine
           .handleTrigger({
             type: 'IG_COMMENT',
