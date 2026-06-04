@@ -386,6 +386,28 @@ model Contact {
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
 
+  // Atribuição / origem do lead — omnichannel (Fase 1). Agnóstico de canal.
+  sourceType           String? @map("source_type")            // instagram_dm | instagram_comment | instagram_story_reply | instagram_mention | click_to_instagram_dm | whatsapp | click_to_whatsapp | landing_page | webchat
+  sourceChannel        String? @map("source_channel")         // channel.type de origem
+  externalUserId       String? @map("external_user_id")       // id do usuário na plataforma de origem (IG user id, wa id...)
+  campaignId           String? @map("campaign_id")
+  campaignName         String? @map("campaign_name")
+  adId                 String? @map("ad_id")
+  adName               String? @map("ad_name")
+  adsetId              String? @map("adset_id")
+  adsetName            String? @map("adset_name")
+  utmSource            String? @map("utm_source")
+  utmMedium            String? @map("utm_medium")
+  utmCampaign          String? @map("utm_campaign")
+  utmContent           String? @map("utm_content")
+  utmTerm              String? @map("utm_term")
+  fbclid               String?
+  fbp                  String?
+  fbc                  String?
+  firstMessage         String? @map("first_message")
+  firstInteractionType String? @map("first_interaction_type")
+  referralSource       String? @map("referral_source")
+
   organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   channels      ContactChannel[]
   conversations Conversation[]
@@ -396,6 +418,8 @@ model Contact {
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
+  @@index([organizationId, sourceType], name: "idx_contact_org_source")
+  @@index([organizationId, campaignId], name: "idx_contact_org_campaign")
   @@map("contacts")
 }
 
