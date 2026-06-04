@@ -124,6 +124,21 @@ export class InboundMessageProcessor extends WorkerHost {
       const { contactId, isNew: isNewContact } =
         await this.contactResolver.resolve(organizationId, channelId, message);
 
+      // Atribuição/origem do lead (Fase 1 omnichannel) — só em contato NOVO,
+      // pra não sobrescrever a origem do primeiro contato. Best-effort.
+      if (isNewContact) {
+        await this.prisma.contact
+          .update({
+            where: { id: contactId },
+            data: this.buildAttribution(message),
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `Atribuição falhou p/ contato ${contactId}: ${err.message}`,
+            ),
+          );
+      }
+
       if (message.channelType === ChannelType.INSTAGRAM) {
         const [channel, contact] = await Promise.all([
           this.prisma.channel.findUnique({ where: { id: channelId } }),
@@ -367,6 +382,41 @@ export class InboundMessageProcessor extends WorkerHost {
     }
   }
 
+  /** Deriva a origem (source) da mensagem — omnichannel, do canal + payload. */
+  private deriveSource(message: NormalizedInboundMessage): string {
+    const c = (message.content as any) || {};
+    switch (message.channelType) {
+      case ChannelType.INSTAGRAM:
+        if (c.ad) return 'ad_ctig';
+        if (c.story?.kind === 'mention') return 'instagram_mention';
+        if (c.story?.kind === 'reply') return 'instagram_story_reply';
+        return 'instagram_dm';
+      case ChannelType.WHATSAPP_OFFICIAL:
+      case ChannelType.WHATSAPP_ZAPI:
+      case ChannelType.WHATSAPP_ZAPPFY:
+        return c.ad ? 'ad_ctwa' : 'whatsapp';
+      default:
+        return String(message.channelType).toLowerCase();
+    }
+  }
+
+  /** Campos de atribuição/origem do lead a partir do payload (Fase 1 omnichannel). */
+  private buildAttribution(message: NormalizedInboundMessage): Record<string, any> {
+    const c = (message.content as any) || {};
+    const source = this.deriveSource(message);
+    const attr: Record<string, any> = {
+      sourceType: source,
+      sourceChannel: String(message.channelType).toLowerCase(),
+      externalUserId: message.externalContactId ?? null,
+      firstInteractionType: source,
+    };
+    if (c.ad?.id) {
+      attr.adId = String(c.ad.id);
+      if (c.ad.title) attr.adName = String(c.ad.title);
+    }
+    return attr;
+  }
+
   /**
    * Persists an inbound message OR merges into an existing row created by the
    * outbound path (which wrote the row with externalId BEFORE we saw the echo).
@@ -417,6 +467,7 @@ export class InboundMessageProcessor extends WorkerHost {
           type: message.type as unknown as PrismaContentType,
           content: message.content as any,
           externalId: message.externalMessageId || null,
+          source: this.deriveSource(message),
           status: isEcho ? MessageStatus.SENT : MessageStatus.DELIVERED,
           senderName: message.senderName || null,
           sentAt: isEcho ? new Date() : null,
