@@ -93,6 +93,16 @@ export class ConversionsService {
     };
   }
 
+  /** Opt-in do tenant: só dispara automático no funil quem tem config (linha).
+   *  Tenant sem config (ex.: @eixxohub) nunca é tocado pelo wiring. */
+  async isOptedIn(organizationId: string): Promise<boolean> {
+    const cfg = await this.prisma.metaCapiConfig.findUnique({
+      where: { organizationId },
+      select: { id: true },
+    });
+    return !!cfg;
+  }
+
   async listEvents(organizationId: string, limit = 50) {
     return this.prisma.conversionEvent.findMany({
       where: { organizationId },

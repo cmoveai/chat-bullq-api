@@ -51,6 +51,9 @@ export class ConversionEventBuilderService {
             email: true, phone: true, externalUserId: true,
             fbc: true, fbp: true, fbclid: true,
             campaignName: true, adName: true,
+            sourceType: true, sourceChannel: true,
+            campaignId: true, adId: true, adsetId: true, adsetName: true,
+            utmSource: true, utmMedium: true, utmCampaign: true,
           },
         })
       : null;
@@ -76,6 +79,19 @@ export class ConversionEventBuilderService {
     if (ctx.currency) customData.currency = ctx.currency;
     const contentName = ctx.contentName ?? contact?.campaignName ?? contact?.adName ?? undefined;
     if (contentName) customData.content_name = contentName;
+
+    // Atribuição (não-PII): rastreabilidade source/campaign/ad/adset no evento.
+    const attribution: Record<string, any> = {};
+    for (const [k, v] of Object.entries({
+      source_type: contact?.sourceType, source_channel: contact?.sourceChannel,
+      campaign_id: contact?.campaignId, campaign_name: contact?.campaignName,
+      ad_id: contact?.adId, ad_name: contact?.adName, adset_id: contact?.adsetId, adset_name: contact?.adsetName,
+      utm_source: contact?.utmSource, utm_medium: contact?.utmMedium, utm_campaign: contact?.utmCampaign,
+      fbclid: contact?.fbclid,
+    })) {
+      if (v) attribution[k] = v;
+    }
+    if (Object.keys(attribution).length) customData.attribution = attribution;
 
     // Dedup determinística por (evento + alvo). dedupKey diferencia repetições.
     const anchor = ctx.cardId ?? contactId ?? ctx.conversationId ?? 'anon';

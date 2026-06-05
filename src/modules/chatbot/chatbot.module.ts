@@ -15,10 +15,12 @@ import { WaitNodeExecutor } from './engine/node-executors/wait-node.executor';
 import { TransferNodeExecutor } from './engine/node-executors/transfer-node.executor';
 import { ActionNodeExecutor } from './engine/node-executors/action-node.executor';
 import { PipelinesModule } from '../pipelines/pipelines.module';
+import { ConversionsModule } from '../conversions/conversions.module';
 
 @Module({
   imports: [
     PipelinesModule,
+    ConversionsModule,
     BullModule.registerQueue(
       { name: 'chatbot-processor' },
       { name: 'outbound-messages' },

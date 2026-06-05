@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../../database/prisma.service';
 import { PipelinesService } from '../../../pipelines/pipelines.service';
+import { ConversionsService } from '../../../conversions/conversions.service';
+import { CAPI_EVENTS, CapiEventName } from '../../../conversions/meta-capi.constants';
 import {
   NodeExecutor,
   NodeExecutionContext,
@@ -32,6 +34,7 @@ export class ActionNodeExecutor implements NodeExecutor {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pipelines: PipelinesService,
+    @Optional() private readonly conversions?: ConversionsService,
   ) {}
 
   async execute(ctx: NodeExecutionContext): Promise<NodeExecutionResult> {
@@ -178,6 +181,12 @@ export class ActionNodeExecutor implements NodeExecutor {
           tool = 'conversation.assignAgent';
           break;
         }
+        case 'SEND_CAPI_EVENT': {
+          const r = await this.sendCapiEvent(ctx, org, conv.contactId);
+          refs.cardId = r.cardId;
+          tool = `conversions.track(${r.capiStatus})`;
+          break;
+        }
         case 'HANDOFF':
           await this.pipelines.handoffToHuman(ctx.conversationId, org, { reason });
           result.transferToHuman = true;
@@ -224,6 +233,32 @@ export class ActionNodeExecutor implements NodeExecutor {
       await this.prisma.card.update({ where: { id: card.id }, data: { sdrAgentId: agent.id } });
     }
     return { agentId: agent.id, cardId: card?.id ?? null };
+  }
+
+  /**
+   * Dispara um evento CAPI a partir do flow (Fase 4 · Fatia 2). Gated: o
+   * ConversionsService decide skipped/gated/simulated; nada sai pro Meta nesta
+   * fase. Não muta CRM. Em dry_run nem chega aqui (cai no branch simulated).
+   */
+  private async sendCapiEvent(
+    ctx: NodeExecutionContext,
+    org: string,
+    contactId: string | null,
+  ): Promise<{ cardId: string | null; capiStatus: string }> {
+    if (!this.conversions) return { cardId: null, capiStatus: 'indisponivel' };
+    const raw = String(ctx.nodeData?.eventName ?? '');
+    if (!CAPI_EVENTS.includes(raw as CapiEventName)) {
+      throw new Error(`eventName CAPI inválido: ${raw || '(vazio)'}`);
+    }
+    const card = await this.resolveCard(ctx, org, contactId);
+    const r = await this.conversions.track(org, raw as CapiEventName, {
+      cardId: card?.id ?? null,
+      contactId,
+      conversationId: ctx.conversationId,
+      value: typeof ctx.nodeData?.value === 'number' ? ctx.nodeData.value : undefined,
+      currency: typeof ctx.nodeData?.currency === 'string' ? ctx.nodeData.currency : undefined,
+    });
+    return { cardId: card?.id ?? null, capiStatus: r.status };
   }
 
   private async resolveCard(ctx: NodeExecutionContext, org: string, contactId: string | null) {

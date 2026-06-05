@@ -3,10 +3,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { CardStatus, PipelineStageType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { ConversionsService } from '../conversions/conversions.service';
+import { CapiEventName } from '../conversions/meta-capi.constants';
 import {
   CreateCardDto,
   CreatePipelineDto,
@@ -39,7 +42,37 @@ export class PipelinesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    // Opcional: presente via DI no app; ausente em construções manuais (scripts).
+    @Optional() private readonly conversions?: ConversionsService,
   ) {}
+
+  /**
+   * Dispara um evento CAPI a partir do funil (Fase 4 · Fatia 2). Best-effort:
+   * NUNCA quebra a operação comercial. Opt-in por tenant (só quem tem config) —
+   * mantém @eixxohub e tenants sem config 100% intocados. Continua GATED (o
+   * envio real depende do kill-switch global + tenant.enabled). Dedup por
+   * event_id (track) absorve reprocesso.
+   */
+  private async fireCapi(
+    organizationId: string,
+    eventName: CapiEventName,
+    ctx: {
+      cardId?: string | null;
+      contactId?: string | null;
+      conversationId?: string | null;
+      value?: number | null;
+      currency?: string | null;
+      dedupKey?: string | null;
+    },
+  ): Promise<void> {
+    if (!this.conversions) return;
+    try {
+      if (!(await this.conversions.isOptedIn(organizationId))) return;
+      await this.conversions.track(organizationId, eventName, ctx);
+    } catch {
+      // silencioso de propósito — auditoria comercial não pode cair por CAPI.
+    }
+  }
 
   // ─── Pipelines ─────────────────────────────────
 
@@ -459,6 +492,15 @@ export class PipelinesService {
       },
     });
     this.realtime.emitToOrg(organizationId, 'card:updated', { card: updated });
+
+    // CAPI · Lead quando o card é qualificado (camada segura, gated, opt-in).
+    if (qualified) {
+      await this.fireCapi(organizationId, 'Lead', {
+        cardId,
+        contactId: updated.contactId,
+        conversationId: updated.conversationId,
+      });
+    }
     return updated;
   }
 
@@ -670,6 +712,17 @@ export class PipelinesService {
       cobrancaSlug: cobranca.slug,
     });
 
+    // CAPI · InitiateCheckout quando a cobrança é criada (intenção de compra).
+    // dedupKey = cobrança → cada cobrança é um checkout distinto.
+    await this.fireCapi(organizationId, 'InitiateCheckout', {
+      cardId: card.id,
+      contactId: card.contactId,
+      conversationId: card.conversationId,
+      value: valor,
+      currency: 'BRL',
+      dedupKey: cobranca.id,
+    });
+
     return cobranca;
   }
 
@@ -829,6 +882,24 @@ export class PipelinesService {
       status: newStatus,
     });
 
+    // CAPI · Purchase quando o card vira WON; Schedule quando entra na etapa de
+    // reunião. Gated, opt-in, dedup por event_id (reprocesso não duplica).
+    if (statusChanged && targetStage.type === 'WON') {
+      await this.fireCapi(organizationId, 'Purchase', {
+        cardId,
+        contactId: card.contactId,
+        conversationId: card.conversationId,
+        value: card.value ? Number(card.value) : null,
+        currency: 'BRL',
+      });
+    } else if (stageChanged && this.isMeetingStage(targetStage.name)) {
+      await this.fireCapi(organizationId, 'Schedule', {
+        cardId,
+        contactId: card.contactId,
+        conversationId: card.conversationId,
+      });
+    }
+
     return this.prisma.card.findUnique({
       where: { id: cardId },
       include: {
@@ -836,6 +907,16 @@ export class PipelinesService {
         assignedTo: { select: { id: true, name: true, avatarUrl: true } },
       },
     });
+  }
+
+  /** Etapa de reunião (Schedule) por nome — funil SDR padrão usa "Reunião agendada". */
+  private isMeetingStage(name?: string | null): boolean {
+    if (!name) return false;
+    const n = name
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase();
+    return n.includes('reuniao') || n.includes('meeting') || n.includes('agendad');
   }
 
   // ─── helpers ───────────────────────────────────
