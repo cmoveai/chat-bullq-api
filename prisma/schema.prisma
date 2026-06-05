@@ -202,6 +202,8 @@ model Organization {
   followupExecutions FollowupExecution[]
   chatbotFlowExecutions ChatbotFlowExecution[]
   chatbotExecutionSteps ChatbotExecutionStep[]
+  metaCapiConfig MetaCapiConfig?
+  conversionEvents ConversionEvent[]
   products      Product[]
   supportTickets SupportTicket[]
   subscription  Subscription?
@@ -773,6 +775,59 @@ model ChatbotExecutionStep {
   @@index([conversationId, createdAt])
   @@index([organizationId, status])
   @@map("chatbot_execution_steps")
+}
+
+// ─── Meta Conversions API (CAPI · Fase 4) ────────
+// Config por tenant (sem pixel global). Token cifrado at-rest (EncryptionService).
+// Envio real fica DESLIGADO por padrão (enabled=false) + kill-switch global.
+model MetaCapiConfig {
+  id             String   @id @default(cuid())
+  organizationId String   @unique @map("organization_id")
+  pixelId        String?  @map("pixel_id")
+  datasetId      String?  @map("dataset_id")
+  accessToken    String?  @map("access_token") // cifrado (enc:v1:)
+  testEventCode  String?  @map("test_event_code")
+  actionSource   String   @default("business_messaging") @map("action_source")
+  apiVersion     String   @default("v21.0") @map("api_version")
+  enabled        Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("meta_capi_configs")
+}
+
+// Evento de conversão server-side. PII fica HASHEADA em user_data (nunca pura).
+// status: pending | skipped (sem config) | gated (envio off) | simulated (test) |
+//         sent | failed. Dedup por (organizationId, event_id).
+model ConversionEvent {
+  id               String    @id @default(cuid())
+  organizationId   String    @map("organization_id")
+  eventName        String    @map("event_name") // Lead | Schedule | InitiateCheckout | Purchase
+  eventId          String    @map("event_id")
+  eventTime        DateTime  @default(now()) @map("event_time")
+  actionSource     String    @map("action_source")
+  status           String    @default("pending")
+  contactId        String?   @map("contact_id")
+  cardId           String?   @map("card_id")
+  conversationId   String?   @map("conversation_id")
+  userData         Json?     @map("user_data")
+  customData       Json?     @map("custom_data")
+  value            Decimal?  @db.Decimal(12, 2)
+  currency         String?
+  testEventCode    String?   @map("test_event_code")
+  externalResponse Json?     @map("external_response")
+  error            String?
+  sentAt           DateTime? @map("sent_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, eventId])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, eventName, status])
+  @@map("conversion_events")
 }
 
 // ─── Quick Replies ───────────────────────────────
