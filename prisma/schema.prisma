@@ -281,6 +281,11 @@ model Channel {
   // Permite o operador desligar a IA num canal específico (ex: 1581 produção)
   // sem precisar mexer no toggle global da org.
   aiEnabled      Boolean?    @map("ai_enabled")
+  // Estado de conexão (String, sem enum novo): not_connected | pending |
+  // connected | failed | needs_review | revoked. Onboarding (Embedded Signup)
+  // transita pending→connected/needs_review/failed. Default connected p/ canais
+  // legados (já estavam conectados).
+  connectionStatus String   @default("connected") @map("connection_status")
   createdAt      DateTime    @default(now()) @map("created_at")
   updatedAt      DateTime    @updatedAt @map("updated_at")
   deletedAt      DateTime?   @map("deleted_at")
