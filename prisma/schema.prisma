@@ -173,7 +173,9 @@ model Organization {
   deletedAt DateTime? @map("deleted_at")
 
   // ─── AI settings ────────────────────────────────
-  aiEnabled            Boolean @default(true) @map("ai_enabled")
+  // Default false: novo tenant nasce com IA OFF (opt-in). Só afeta linhas novas;
+  // tenants existentes mantêm o valor atual (sem backfill). Rollback = voltar true.
+  aiEnabled            Boolean @default(false) @map("ai_enabled")
   aiTimezone           String  @default("America/Sao_Paulo") @map("ai_timezone")
   aiBusinessHours      Json?   @map("ai_business_hours")
   aiOutOfHoursMessage  String? @map("ai_out_of_hours_message")
