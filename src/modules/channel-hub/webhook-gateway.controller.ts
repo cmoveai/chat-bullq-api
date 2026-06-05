@@ -20,6 +20,7 @@ import { Public } from '../../common/decorators';
 import { AutomationEngine } from '../automations/automation-engine.service';
 import { BpmnEngine } from '../automations/bpmn-engine.service';
 import { SocialInteractionsService } from '../social-interactions/social-interactions.service';
+import { runWithTenant } from '../../database/tenant-context';
 import { ChannelAdapterRegistry } from './channel-adapter.registry';
 import { ChannelsService } from './channels/channels.service';
 import { WebhookEventsService } from './webhook-events.service';
@@ -180,29 +181,50 @@ export class WebhookGatewayController {
           rawPayload: comment.rawPayload,
         });
 
-        this.bpmnEngine
-          .handleTrigger({
-            type: 'IG_COMMENT',
-            channelId: channel.id,
-            organizationId: channel.organizationId,
-            externalEventId: comment.externalCommentId,
-            externalCommentId: comment.externalCommentId,
-            text: comment.text ?? '',
-            postId: (comment as any).postId,
-            username: comment.contactUsername ?? '',
-          })
-          .catch((err) =>
-            this.logger.error(
-              `BpmnEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
-            ),
-          );
-        this.automationEngine
-          .handleInstagramComment(channel.id, comment)
-          .catch((err) =>
-            this.logger.error(
-              `AutomationEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
-            ),
-          );
+        // Os motores escrevem via PrismaService (RLS) → precisam do contexto
+        // de tenant. Sem isso o RLS bloqueia e o comment→DM nunca dispara.
+        const orgId = channel.organizationId;
+        void runWithTenant(orgId, async () => {
+          await this.bpmnEngine
+            .handleTrigger({
+              type: 'IG_COMMENT',
+              channelId: channel.id,
+              organizationId: orgId,
+              externalEventId: comment.externalCommentId,
+              externalCommentId: comment.externalCommentId,
+              text: comment.text ?? '',
+              postId: (comment as any).postId,
+              username: comment.contactUsername ?? '',
+            })
+            .catch((err) =>
+              this.logger.error(
+                `BpmnEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
+              ),
+            );
+          // Decommission seguro do legacy comment→DM (por canal):
+          // legacy só roda se (a) a flag do canal permite (default: permitido)
+          // E (b) NÃO existe flow genérico IG_COMMENT ativo no canal. Assim,
+          // canal migrado (com flow genérico) suprime o legacy → nunca os dois
+          // enviam DM pro mesmo comentário.
+          const cfg = channel.config as Record<string, any> | null;
+          const legacyEnabled = cfg?.legacyCommentDmEnabled !== false;
+          const hasGenericFlow = await this.bpmnEngine
+            .hasActiveFlow(orgId, channel.id, 'IG_COMMENT')
+            .catch(() => false);
+          if (legacyEnabled && !hasGenericFlow) {
+            await this.automationEngine
+              .handleInstagramComment(channel.id, comment)
+              .catch((err) =>
+                this.logger.error(
+                  `AutomationEngine failed for comment ${comment.externalCommentId}: ${err.message}`,
+                ),
+              );
+          } else {
+            this.logger.debug(
+              `Legacy comment→DM suprimido · canal ${channel.id} (generic=${hasGenericFlow}, legacyEnabled=${legacyEnabled})`,
+            );
+          }
+        });
       }
     }
 

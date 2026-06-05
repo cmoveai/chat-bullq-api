@@ -23,6 +23,7 @@ export class ChatbotProcessor extends WorkerHost {
     private readonly engine: ChatbotEngineService,
     private readonly prisma: PrismaService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
+    @InjectQueue('chatbot-processor') private readonly chatbotQueue: Queue,
   ) {
     super();
   }
@@ -58,6 +59,23 @@ export class ChatbotProcessor extends WorkerHost {
         contactExternalId,
         message: { type: msg.type, content: msg.content },
       });
+    }
+
+    // DELAY temporizado: a sessão pausou — reagenda a retomada (texto vazio)
+    // daqui a `delaySeconds`. jobId estável por conversa = idempotência (uma
+    // pausa ativa por conversa; não dispara duas retomadas).
+    if (result.delaySeconds && result.delaySeconds > 0) {
+      await this.chatbotQueue.add(
+        'process-bot',
+        { conversationId, channelId, contactExternalId, organizationId, messageText: '' },
+        {
+          delay: result.delaySeconds * 1000,
+          jobId: `delay:${conversationId}`,
+          removeOnComplete: true,
+          removeOnFail: false,
+        },
+      );
+      this.logger.log(`Delay agendado ${result.delaySeconds}s · conv=${conversationId}`);
     }
 
     if (result.transferToHuman) {

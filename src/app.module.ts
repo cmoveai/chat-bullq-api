@@ -17,6 +17,7 @@ import { RoutingModule } from './modules/routing/routing.module';
 import { QuickRepliesModule } from './modules/quick-replies/quick-replies.module';
 import { TagsModule } from './modules/tags/tags.module';
 import { ChatbotModule } from './modules/chatbot/chatbot.module';
+import { ConversionsModule } from './modules/conversions/conversions.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { RatingsModule } from './modules/ratings/ratings.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
@@ -28,6 +29,7 @@ import { PipelinesModule } from './modules/pipelines/pipelines.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { AutomationsModule } from './modules/automations/automations.module';
+import { FollowupsModule } from './modules/followups/followups.module';
 import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { AuditModule } from './modules/audit/audit.module';
@@ -78,6 +80,7 @@ import redisConfig from './config/redis.config';
     QuickRepliesModule,
     TagsModule,
     ChatbotModule,
+    ConversionsModule,
     DashboardModule,
     RatingsModule,
     ApiKeysModule,
@@ -88,6 +91,7 @@ import redisConfig from './config/redis.config';
     TasksModule,
     OffersModule,
     AutomationsModule,
+    FollowupsModule,
     KnowledgeBasesModule,
     BackupModule,
     AuditModule,

@@ -11,21 +11,17 @@ export const DEFAULT_PIPELINE_STAGES: {
   type: 'NORMAL' | 'WON' | 'LOST';
   order: number;
 }[] = [
-  { name: 'Boas-vindas', color: 'sky', type: 'NORMAL', order: 0 },
-  { name: 'Lead', color: 'blue', type: 'NORMAL', order: 1 },
-  { name: 'Novo Ticket', color: 'indigo', type: 'NORMAL', order: 2 },
-  { name: 'Configuração', color: 'violet', type: 'NORMAL', order: 3 },
-  { name: 'Em Andamento', color: 'amber', type: 'NORMAL', order: 4 },
-  { name: 'Qualificado', color: 'purple', type: 'NORMAL', order: 5 },
-  { name: 'Aguardando Cliente', color: 'fuchsia', type: 'NORMAL', order: 6 },
-  { name: 'Proposta', color: 'pink', type: 'NORMAL', order: 7 },
-  { name: 'Treinamento', color: 'yellow', type: 'NORMAL', order: 8 },
-  { name: 'Ativo', color: 'emerald', type: 'NORMAL', order: 9 },
-  { name: 'Negociação', color: 'orange', type: 'NORMAL', order: 10 },
-  { name: 'Resolvido', color: 'teal', type: 'NORMAL', order: 11 },
-  { name: 'Fechado', color: 'green', type: 'WON', order: 12 },
-  { name: 'Ganho', color: 'green', type: 'WON', order: 13 },
-  { name: 'Perdido', color: 'red', type: 'LOST', order: 14 },
+  // Funil SDR/Comercial padrão — etapas iniciais de um tenant novo.
+  { name: 'Novo Lead', color: 'sky', type: 'NORMAL', order: 0 },
+  { name: 'Primeiro contato', color: 'blue', type: 'NORMAL', order: 1 },
+  { name: 'Em qualificação', color: 'indigo', type: 'NORMAL', order: 2 },
+  { name: 'Qualificado', color: 'violet', type: 'NORMAL', order: 3 },
+  { name: 'Aguardando resposta', color: 'amber', type: 'NORMAL', order: 4 },
+  { name: 'Reunião agendada', color: 'purple', type: 'NORMAL', order: 5 },
+  { name: 'Proposta enviada', color: 'pink', type: 'NORMAL', order: 6 },
+  { name: 'Em negociação', color: 'orange', type: 'NORMAL', order: 7 },
+  { name: 'Ganho', color: 'green', type: 'WON', order: 8 },
+  { name: 'Perdido', color: 'red', type: 'LOST', order: 9 },
 ];
 
 /**

@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { InstagramHttpClient } from '../channel-hub/adapters/instagram/instagram.http-client';
 import { PipelinesService } from '../pipelines/pipelines.service';
+import { ChatbotEngineService } from '../chatbot/engine/chatbot-engine.service';
 
 /**
  * Executor BPMN · lê config.nodes/edges salvos pelo construtor visual e
@@ -84,6 +85,16 @@ export type TriggerEvent =
       externalContactId?: string;
       text: string;
       username?: string;
+    }
+  | {
+      type: 'FOLLOWUP_DUE';
+      organizationId: string;
+      cardId: string;
+      externalEventId: string;
+      channelId?: string;
+      conversationId?: string;
+      contactId?: string;
+      text?: string;
     };
 
 interface ExecutionContext {
@@ -105,6 +116,7 @@ export class BpmnEngine {
     private readonly prisma: PrismaService,
     private readonly instagramHttp: InstagramHttpClient,
     private readonly pipelines: PipelinesService,
+    private readonly chatbotEngine: ChatbotEngineService,
     @InjectQueue('outbound-messages') private readonly outboundQueue: Queue,
   ) {}
 
@@ -130,6 +142,22 @@ export class BpmnEngine {
       const triggerNode = this.findTriggerNode(config.nodes, event.type);
       if (!triggerNode) continue;
 
+      // Idempotência: se já houve execução pra (automation, evento), NÃO
+      // re-roda — reprocessar o mesmo comentário/webhook não pode disparar
+      // o flow nem reenviar DM duplicada (uq automationId+externalEventId).
+      const alreadyRan = await this.prisma.automationExecution
+        .findUnique({
+          where: {
+            automationId_externalEventId: {
+              automationId: automation.id,
+              externalEventId: event.externalEventId,
+            },
+          },
+          select: { id: true },
+        })
+        .catch(() => null);
+      if (alreadyRan) continue;
+
       await this.runFlow(automation, config, triggerNode, event).catch((err) => {
         this.logger.error(
           `BPMN flow ${automation.id} crashed: ${err.message}`,
@@ -138,11 +166,38 @@ export class BpmnEngine {
     }
   }
 
+  /**
+   * Há alguma automation ATIVA com um flow genérico escutando esse trigger
+   * neste canal? Usado pelo decommission do legacy: se o canal já usa o flow
+   * genérico de comentário, o legacy é suprimido (evita SEND_DM duplicado).
+   * Roda no contexto de tenant (RLS).
+   */
+  async hasActiveFlow(
+    organizationId: string,
+    channelId: string,
+    triggerType: TriggerEvent['type'],
+  ): Promise<boolean> {
+    const automations = await this.prisma.automation.findMany({
+      where: { organizationId, channelId, isActive: true, deletedAt: null },
+      select: { config: true },
+    });
+    return automations.some((a) => {
+      const cfg = a.config as unknown as BpmnConfig | null;
+      return (
+        Array.isArray(cfg?.nodes) &&
+        cfg!.nodes.some(
+          (n) => n?.type === 'TRIGGER' && n?.data?.subtype === triggerType,
+        )
+      );
+    });
+  }
+
   private findTriggerNode(nodes: BpmnNode[], eventType: TriggerEvent['type']): BpmnNode | null {
     const subtypeMap: Record<TriggerEvent['type'], string> = {
       IG_COMMENT: 'IG_COMMENT',
       WA_MESSAGE: 'WA_MESSAGE',
       IG_DM: 'IG_DM',
+      FOLLOWUP_DUE: 'FOLLOWUP_DUE',
     };
     const subtype = subtypeMap[eventType];
     return (
@@ -224,7 +279,7 @@ export class BpmnEngine {
 
   private async evalCondition(node: BpmnNode, ctx: ExecutionContext): Promise<boolean> {
     const subtype = node.data?.subtype;
-    const text = 'text' in ctx.event ? ctx.event.text : '';
+    const text = ('text' in ctx.event ? ctx.event.text : '') ?? '';
 
     if (subtype === 'KEYWORD') {
       const keywords: string[] = Array.isArray(node.data?.keywords) ? node.data.keywords : [];
@@ -349,6 +404,45 @@ export class BpmnEngine {
         ctx.event.channelId,
         message,
       );
+      return;
+    }
+
+    // ─── START_FLOW (Fase 3) · ponte automation → chatbot_flow. Inicia um
+    //     diálogo multi-turno específico na conversa do evento. Requer um
+    //     evento com conversa (IG_DM/WA_MESSAGE). NÃO envia nada implícito:
+    //     o flow é que decide enviar (MESSAGE nodes). ───
+    if (subtype === 'START_FLOW') {
+      const flowId = node.data?.flowId;
+      if (!flowId) {
+        ctx.errors.push('START_FLOW sem flowId · pulando');
+        return;
+      }
+      const ev = ctx.event as any;
+      const conversationId: string | undefined = ev.conversationId;
+      const channelId: string | undefined = ev.channelId;
+      if (!conversationId || !channelId) {
+        ctx.errors.push('START_FLOW exige evento com conversa/canal · pulando');
+        return;
+      }
+      const result = await this.chatbotEngine.startFlow(
+        conversationId,
+        channelId,
+        flowId,
+        ev.externalContactId ?? '',
+      );
+      // Enfileira as mensagens iniciais do flow (best-effort, omnichannel).
+      const contactId: string | undefined = ev.contactId;
+      if (contactId) {
+        for (const m of result.messages ?? []) {
+          const text =
+            m?.type === 'TEXT' ? (m.content as any)?.text : undefined;
+          if (typeof text === 'string' && text.trim()) {
+            await this.enqueueOutboundText(ctx, contactId, channelId, text).catch(
+              (e) => ctx.errors.push(`START_FLOW envio gated/skipped: ${e.message}`),
+            );
+          }
+        }
+      }
       return;
     }
 

@@ -199,6 +199,11 @@ model Organization {
   cards         Card[]
   cardStageHistory CardStageHistory[]
   sdrActionLog  SdrActionLog[]
+  followupExecutions FollowupExecution[]
+  chatbotFlowExecutions ChatbotFlowExecution[]
+  chatbotExecutionSteps ChatbotExecutionStep[]
+  metaCapiConfig MetaCapiConfig?
+  conversionEvents ConversionEvent[]
   products      Product[]
   supportTickets SupportTicket[]
   subscription  Subscription?
@@ -702,6 +707,127 @@ model ChatbotFlowChannel {
 
   @@id([flowId, channelId])
   @@map("chatbot_flow_channels")
+}
+
+/// Log mínimo de execução de chatbot flow (Fase 3 Flow Builder). Uma linha por
+/// passo relevante (início do flow, ação de CRM, erro). Auditoria multi-tenant
+/// complementar à sessão (que vive só no Redis). RLS tenant_isolation.
+// RUN: um cabeçalho por execução de flow (uma sessão start→fim). Os passos por
+// nó vão em ChatbotExecutionStep. `status`: running | waiting | ended | failed |
+// cancelled. `dryRun` distingue simulação de execução real.
+model ChatbotFlowExecution {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  flowId         String   @map("flow_id")
+  conversationId String   @map("conversation_id")
+  currentNode    String?  @map("current_node")
+  action         String?
+  status         String   @default("ok") // running | waiting | ended | failed | cancelled
+  error          String?
+  dryRun         Boolean  @default(false) @map("dry_run")
+  triggerSource  String?  @map("trigger_source") // inbound | simulate | resume
+  finishedAt     DateTime? @map("finished_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  steps        ChatbotExecutionStep[]
+
+  @@index([organizationId, createdAt])
+  @@index([flowId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([organizationId, status])
+  @@map("chatbot_flow_executions")
+}
+
+// STEP: um registro por nó processado numa execução. Histórico completo +
+// correlação com refs externas (card/task/contact/agent/tag).
+model ChatbotExecutionStep {
+  id              String    @id @default(cuid())
+  executionId     String    @map("execution_id")
+  organizationId  String    @map("organization_id")
+  flowId          String    @map("flow_id")
+  conversationId  String    @map("conversation_id")
+  nodeId          String    @map("node_id")
+  nodeType        String    @map("node_type")
+  action          String?
+  status          String // started | success | failed | skipped | simulated
+  tool            String?
+  input           Json?
+  output          Json?
+  variablesBefore Json?     @map("variables_before")
+  variablesAfter  Json?     @map("variables_after")
+  errorMessage    String?   @map("error_message")
+  cardId          String?   @map("card_id")
+  taskId          String?   @map("task_id")
+  contactId       String?   @map("contact_id")
+  agentId         String?   @map("agent_id")
+  tagId           String?   @map("tag_id")
+  startedAt       DateTime  @default(now()) @map("started_at")
+  finishedAt      DateTime? @map("finished_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  execution    ChatbotFlowExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@index([organizationId, createdAt])
+  @@index([flowId, status])
+  @@index([conversationId, createdAt])
+  @@index([organizationId, status])
+  @@map("chatbot_execution_steps")
+}
+
+// ─── Meta Conversions API (CAPI · Fase 4) ────────
+// Config por tenant (sem pixel global). Token cifrado at-rest (EncryptionService).
+// Envio real fica DESLIGADO por padrão (enabled=false) + kill-switch global.
+model MetaCapiConfig {
+  id             String   @id @default(cuid())
+  organizationId String   @unique @map("organization_id")
+  pixelId        String?  @map("pixel_id")
+  datasetId      String?  @map("dataset_id")
+  accessToken    String?  @map("access_token") // cifrado (enc:v1:)
+  testEventCode  String?  @map("test_event_code")
+  actionSource   String   @default("business_messaging") @map("action_source")
+  apiVersion     String   @default("v21.0") @map("api_version")
+  enabled        Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("meta_capi_configs")
+}
+
+// Evento de conversão server-side. PII fica HASHEADA em user_data (nunca pura).
+// status: pending | skipped (sem config) | gated (envio off) | simulated (test) |
+//         sent | failed. Dedup por (organizationId, event_id).
+model ConversionEvent {
+  id               String    @id @default(cuid())
+  organizationId   String    @map("organization_id")
+  eventName        String    @map("event_name") // Lead | Schedule | InitiateCheckout | Purchase
+  eventId          String    @map("event_id")
+  eventTime        DateTime  @default(now()) @map("event_time")
+  actionSource     String    @map("action_source")
+  status           String    @default("pending")
+  contactId        String?   @map("contact_id")
+  cardId           String?   @map("card_id")
+  conversationId   String?   @map("conversation_id")
+  userData         Json?     @map("user_data")
+  customData       Json?     @map("custom_data")
+  value            Decimal?  @db.Decimal(12, 2)
+  currency         String?
+  testEventCode    String?   @map("test_event_code")
+  externalResponse Json?     @map("external_response")
+  error            String?
+  sentAt           DateTime? @map("sent_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, eventId])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, eventName, status])
+  @@map("conversion_events")
 }
 
 // ─── Quick Replies ───────────────────────────────
@@ -1357,6 +1483,7 @@ model Card {
   cobrancas    Cobranca[]
   tasks        Task[]
   stageHistory CardStageHistory[]
+  followupExecutions FollowupExecution[]
 
   @@index([pipelineId, stageId, order])
   @@index([organizationId, status])
@@ -1364,6 +1491,33 @@ model Card {
   @@index([conversationId])
   @@index([organizationId, nextFollowupAt])
   @@map("cards")
+}
+
+/// Execução de follow-up (Fase 2.5). Uma linha por (card, vencimento) — o
+/// UNIQUE garante idempotência e serve de claim/lock entre runners. Estados:
+/// pending | processing | processed | failed | skipped. NÃO envia mensagem: o
+/// runner cria task + dispara o trigger interno FOLLOWUP_DUE; só uma automation
+/// explícita decide enviar algo.
+model FollowupExecution {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  cardId         String    @map("card_id")
+  dueAt          DateTime  @map("due_at")
+  status         String    @default("processing")
+  taskId         String?   @map("task_id")
+  errorMessage   String?   @map("error_message")
+  attempts       Int       @default(0)
+  processedAt    DateTime? @map("processed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  card         Card         @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, dueAt])
+  @@index([organizationId, status])
+  @@index([dueAt, status])
+  @@map("followup_executions")
 }
 
 /// Trilha de auditoria de TODA movimentação de stage/status de um card.
