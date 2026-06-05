@@ -79,19 +79,20 @@ export class WhatsAppOnboardingService {
       phoneNumberId = phoneNumberId || discovered.phoneNumberId;
     }
 
-    // Registrar o número é best-effort: números recém-criados no ES costumam
-    // precisar; números já registrados retornam erro que ignoramos.
-    await this.registerPhoneNumber(phoneNumberId, accessToken);
+    // Registrar o número é best-effort. Sucesso → 'connected'; falha → 'needs_review'
+    // (número precisa de atenção/registro manual), mas o canal é criado mesmo assim.
+    const registered = await this.registerPhoneNumber(phoneNumberId, accessToken);
+    const connectionStatus = registered ? 'connected' : 'needs_review';
 
     const displayName = await this.fetchDisplayName(phoneNumberId, accessToken);
 
     const config = {
-      // token cifrado at-rest (AES-256-GCM); as chamadas vivas acima usaram o
-      // accessToken em texto puro, mas no banco vai cifrado.
+      // Segredos cifrados at-rest (AES-256-GCM); as chamadas vivas acima usaram
+      // os valores em texto puro, mas no banco vão cifrados.
       accessToken: this.encryption.encrypt(accessToken),
       phoneNumberId,
       businessAccountId: wabaId,
-      appSecret,
+      appSecret: this.encryption.encrypt(appSecret),
       apiVersion: this.apiVersion,
     };
 
@@ -111,27 +112,34 @@ export class WhatsAppOnboardingService {
 
     if (existing) {
       const merged = { ...(existing.config as Record<string, any>), ...config };
+      // Reconnect NÃO reativa o canal (preserva isActive) — onboarding não liga
+      // o público sozinho. Só atualiza token/segredos e o estado de conexão.
       const updated = await this.prisma.channel.update({
         where: { id: existing.id },
-        data: { config: merged, isActive: true },
+        data: { config: merged, connectionStatus },
       });
-      // Garante a assinatura do app na WABA mesmo no reconnect.
       await this.channels
         .enrichProviderIds(updated.id, ChannelType.WHATSAPP_OFFICIAL)
         .catch(() => undefined);
       this.logger.log(
-        `WA Embedded Signup: número ${phoneNumberId} reconectado (canal ${updated.id}, org ${organizationId})`,
+        `WA Embedded Signup: número ${phoneNumberId} reconectado (canal ${updated.id}, org ${organizationId}, status ${connectionStatus})`,
       );
       return updated;
     }
 
-    const channel = await this.channels.create(
+    const created = await this.channels.create(
       organizationId,
       { type: ChannelType.WHATSAPP_OFFICIAL, name, config },
       creator,
     );
+    // SEGURO POR PADRÃO: canal do ES nasce com IA OFF e desativado. Sem agente
+    // conectado automaticamente, sem resposta pública. Ativação é manual depois.
+    const channel = await this.prisma.channel.update({
+      where: { id: created.id },
+      data: { isActive: false, aiEnabled: false, connectionStatus },
+    });
     this.logger.log(
-      `WA Embedded Signup: número ${phoneNumberId} conectado (canal ${channel.id}, WABA ${wabaId}, org ${organizationId})`,
+      `WA Embedded Signup: número ${phoneNumberId} conectado (canal ${channel.id}, WABA ${wabaId}, org ${organizationId}, status ${connectionStatus}, isActive=false, aiEnabled=false)`,
     );
     return channel;
   }
@@ -230,16 +238,18 @@ export class WhatsAppOnboardingService {
    * Registra o número na Cloud API. Best-effort: só roda com PIN configurado e
    * nunca derruba a conexão — número já registrado retorna erro esperado.
    */
+  /** Registra o número na Cloud API (best-effort). Retorna true se ok/já
+   *  registrado (ou sem PIN configurado = pula), false se a tentativa falhou. */
   private async registerPhoneNumber(
     phoneNumberId: string,
     accessToken: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const pin = process.env.META_PHONE_REGISTER_PIN;
     if (!pin) {
       this.logger.warn(
         `META_PHONE_REGISTER_PIN não setado — pulando register do número ${phoneNumberId} (ok se já registrado)`,
       );
-      return;
+      return true;
     }
     try {
       await axios.post(
@@ -248,11 +258,13 @@ export class WhatsAppOnboardingService {
         { headers: { Authorization: `Bearer ${accessToken}` }, timeout: 30000 },
       );
       this.logger.log(`Número ${phoneNumberId} registrado na Cloud API`);
+      return true;
     } catch (error: any) {
       const meta = error.response?.data?.error?.message || error.message;
       this.logger.warn(
-        `register do número ${phoneNumberId} não concluído (seguindo mesmo assim): ${meta}`,
+        `register do número ${phoneNumberId} não concluído (canal vai p/ needs_review): ${meta}`,
       );
+      return false;
     }
   }
 

@@ -52,7 +52,7 @@ export class ChannelsService {
   ): T {
     if (!config || typeof config !== 'object') return config;
     const out: Record<string, any> = { ...config };
-    for (const k of ['accessToken', 'pageAccessToken']) {
+    for (const k of ['accessToken', 'pageAccessToken', 'appSecret']) {
       if (typeof out[k] === 'string' && out[k].length > 0) {
         out[k] = this.encryption.encrypt(out[k]);
       }

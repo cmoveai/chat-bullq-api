@@ -7,13 +7,17 @@ import {
 } from '../../ports/inbound-channel.port';
 import { WebhookParseResult, VerificationResponse } from '../../ports/types';
 import { InstagramMessageMapper } from './instagram.message-mapper';
+import { EncryptionService } from '../../../../common/crypto/encryption.service';
 
 @Injectable()
 export class InstagramInboundAdapter implements InboundChannelPort {
   readonly channelType = ChannelType.INSTAGRAM;
   private readonly logger = new Logger(InstagramInboundAdapter.name);
 
-  constructor(private readonly mapper: InstagramMessageMapper) {}
+  constructor(
+    private readonly mapper: InstagramMessageMapper,
+    private readonly encryption: EncryptionService,
+  ) {}
 
   extractLocators(payload: unknown): ChannelLocator[] {
     const body = (payload ?? {}) as Record<string, any>;
@@ -46,7 +50,9 @@ export class InstagramInboundAdapter implements InboundChannelPort {
     _webhookSecret?: string,
     channel?: Channel,
   ): boolean {
-    const appSecret = (channel?.config as Record<string, any> | undefined)?.appSecret;
+    // appSecret cifrado at-rest (enc:v1:) — decifra; aceita legado em texto puro.
+    const rawAppSecret = (channel?.config as Record<string, any> | undefined)?.appSecret;
+    const appSecret = this.encryption.decrypt(rawAppSecret) ?? rawAppSecret;
     if (!appSecret) return true;
 
     const signature = headers['x-hub-signature-256'];

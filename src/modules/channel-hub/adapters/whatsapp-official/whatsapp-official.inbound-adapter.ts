@@ -7,13 +7,17 @@ import {
 } from '../../ports/inbound-channel.port';
 import { WebhookParseResult, VerificationResponse } from '../../ports/types';
 import { WhatsAppOfficialMessageMapper } from './whatsapp-official.message-mapper';
+import { EncryptionService } from '../../../../common/crypto/encryption.service';
 
 @Injectable()
 export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
   readonly channelType = ChannelType.WHATSAPP_OFFICIAL;
   private readonly logger = new Logger(WhatsAppOfficialInboundAdapter.name);
 
-  constructor(private readonly mapper: WhatsAppOfficialMessageMapper) {}
+  constructor(
+    private readonly mapper: WhatsAppOfficialMessageMapper,
+    private readonly encryption: EncryptionService,
+  ) {}
 
   extractLocators(payload: unknown): ChannelLocator[] {
     const body = (payload ?? {}) as Record<string, any>;
@@ -61,8 +65,10 @@ export class WhatsAppOfficialInboundAdapter implements InboundChannelPort {
     _webhookSecret?: string,
     channel?: Channel,
   ): boolean {
-    const appSecret = (channel?.config as Record<string, any> | undefined)
+    // appSecret cifrado at-rest (enc:v1:) — decifra; aceita legado em texto puro.
+    const rawAppSecret = (channel?.config as Record<string, any> | undefined)
       ?.appSecret;
+    const appSecret = this.encryption.decrypt(rawAppSecret) ?? rawAppSecret;
     if (!appSecret) {
       this.logger.warn(
         `WA Official channel ${channel?.id} missing config.appSecret — rejecting webhook`,
