@@ -61,13 +61,16 @@ export class SubscriptionsService {
 
   /**
    * Status simplificado da conta · usado pelo banner do dashboard e guard de rotas.
-   * - active: pagou ou trial válido
-   * - suspended: trial vencido ou status PAST_DUE/CANCELED/EXPIRED
+   * Regra de acesso (modelo trial-first):
+   * - liberado: status ACTIVE, ou TRIAL com trialEndsAt ainda no futuro;
+   * - suspenso: TRIAL expirado, PAST_DUE, CANCELED, EXPIRED, sem assinatura
+   *   ou status desconhecido.
+   * O trial dá acesso ANTES do pagamento (pilotos/founder/degustação).
    */
   async getAccountStatus(organizationId: string): Promise<{
     suspended: boolean;
     reason:
-      | 'trial_pending_payment'
+      | 'trial_active'
       | 'trial_expired'
       | 'past_due'
       | 'canceled'
@@ -91,21 +94,46 @@ export class SubscriptionsService {
       };
     }
 
-    // Regra firme: SÓ subscription ACTIVE libera acesso. Trial sem pagamento
-    // confirmado conta como suspended (cliente precisa pagar via cartão ou Pix
-    // pra usar a plataforma). Trial existe só como contagem regressiva pra cobrar.
-    let suspended = sub.status !== SubscriptionStatus.ACTIVE;
-    let reason: 'trial_pending_payment' | 'trial_expired' | 'past_due' | 'canceled' | 'expired' | null = null;
+    // Modelo trial-first: ACTIVE e TRIAL válido (trialEndsAt no futuro) liberam
+    // acesso. TRIAL expirado e os demais status bloqueiam.
+    const trialValid =
+      sub.status === SubscriptionStatus.TRIAL &&
+      sub.trialEndsAt != null &&
+      sub.trialEndsAt.getTime() > Date.now();
 
-    if (sub.status === SubscriptionStatus.TRIAL) {
-      const trialExpired = sub.trialEndsAt && sub.trialEndsAt.getTime() < Date.now();
-      reason = trialExpired ? 'trial_expired' : 'trial_pending_payment';
-    } else if (sub.status === SubscriptionStatus.PAST_DUE) {
-      reason = 'past_due';
-    } else if (sub.status === SubscriptionStatus.CANCELED) {
-      reason = 'canceled';
-    } else if (sub.status === SubscriptionStatus.EXPIRED) {
-      reason = 'expired';
+    let suspended: boolean;
+    let reason:
+      | 'trial_active'
+      | 'trial_expired'
+      | 'past_due'
+      | 'canceled'
+      | 'expired'
+      | null = null;
+
+    switch (sub.status) {
+      case SubscriptionStatus.ACTIVE:
+        suspended = false;
+        break;
+      case SubscriptionStatus.TRIAL:
+        suspended = !trialValid;
+        reason = trialValid ? 'trial_active' : 'trial_expired';
+        break;
+      case SubscriptionStatus.PAST_DUE:
+        suspended = true;
+        reason = 'past_due';
+        break;
+      case SubscriptionStatus.CANCELED:
+        suspended = true;
+        reason = 'canceled';
+        break;
+      case SubscriptionStatus.EXPIRED:
+        suspended = true;
+        reason = 'expired';
+        break;
+      default:
+        // status desconhecido/inválido: bloqueia por segurança
+        suspended = true;
+        break;
     }
 
     return {
