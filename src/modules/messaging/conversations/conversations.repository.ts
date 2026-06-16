@@ -253,7 +253,17 @@ export class ConversationsRepository {
       where: { id },
       include: {
         contact: { include: { channels: true, tags: { include: { tag: true } } } },
-        channel: true,
+        // Sem `config`/`webhookSecret` — dados sensíveis do canal não vazam no
+        // payload do detalhe. O sendability é derivado à parte (getDetail).
+        channel: {
+          select: {
+            id: true,
+            type: true,
+            name: true,
+            isActive: true,
+            connectionStatus: true,
+          },
+        },
         assignedTo: { select: { id: true, name: true, avatarUrl: true } },
         department: true,
         tags: { include: { tag: true } },

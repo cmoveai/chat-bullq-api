@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Conversation, ConversationStatus } from '@prisma/client';
 import { ConversationsRepository, InboxFilters } from './conversations.repository';
+import { computeSendability } from '../channel-sendability';
 import { ConversationFsmService } from './conversation-fsm.service';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
@@ -154,7 +155,33 @@ export class ConversationsService {
             : null,
         }
       : null;
-    return { ...conversation, crm: { activeCard } };
+    // Canal seguro + sendability. `config` é lido só aqui (interno) para
+    // detectar demo/mock/sandbox e NUNCA é devolvido no payload.
+    const chRow = await this.prisma.channel.findUnique({
+      where: { id: conversation.channelId },
+      select: {
+        id: true,
+        type: true,
+        name: true,
+        isActive: true,
+        connectionStatus: true,
+        config: true,
+      },
+    });
+    const { canSend, sendBlockReason } = computeSendability(chRow, conversation.status);
+    const channel = chRow
+      ? {
+          id: chRow.id,
+          type: chRow.type,
+          name: chRow.name,
+          isActive: chRow.isActive,
+          connectionStatus: chRow.connectionStatus,
+          canSend,
+          sendBlockReason,
+        }
+      : conversation.channel;
+
+    return { ...conversation, channel, crm: { activeCard } };
   }
 
   async update(
