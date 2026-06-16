@@ -79,10 +79,11 @@ export class WhatsAppOnboardingService {
       phoneNumberId = phoneNumberId || discovered.phoneNumberId;
     }
 
-    // Registrar o número é best-effort. Sucesso → 'connected'; falha → 'needs_review'
-    // (número precisa de atenção/registro manual), mas o canal é criado mesmo assim.
+    // Registrar o número é best-effort, mas o canal é criado mesmo assim. O
+    // status final ('connected' só se o número registrou E o app assinou a
+    // WABA) é decidido abaixo, depois do subscribe — senão o canal pareceria
+    // conectado sem nunca receber webhook.
     const registered = await this.registerPhoneNumber(phoneNumberId, accessToken);
-    const connectionStatus = registered ? 'connected' : 'needs_review';
 
     const displayName = await this.fetchDisplayName(phoneNumberId, accessToken);
 
@@ -113,33 +114,54 @@ export class WhatsAppOnboardingService {
     if (existing) {
       const merged = { ...(existing.config as Record<string, any>), ...config };
       // Reconnect NÃO reativa o canal (preserva isActive) — onboarding não liga
-      // o público sozinho. Só atualiza token/segredos e o estado de conexão.
-      const updated = await this.prisma.channel.update({
+      // o público sozinho. Atualiza token/segredos primeiro para o subscribe
+      // rodar com o token novo.
+      await this.prisma.channel.update({
         where: { id: existing.id },
-        data: { config: merged, connectionStatus },
+        data: { config: merged },
       });
       await this.channels
-        .enrichProviderIds(updated.id, ChannelType.WHATSAPP_OFFICIAL)
+        .enrichProviderIds(existing.id, ChannelType.WHATSAPP_OFFICIAL)
         .catch(() => undefined);
+      // Reconexão também (re)assina a WABA — fecha o buraco de um canal que
+      // reconecta mas nunca volta a receber webhook.
+      const subscription = await this.channels.ensureWaOfficialSubscription(
+        existing.id,
+      );
+      const finalStatus =
+        registered && subscription.subscribed ? 'connected' : 'needs_review';
+      const updated = await this.prisma.channel.update({
+        where: { id: existing.id },
+        data: { connectionStatus: finalStatus },
+      });
       this.logger.log(
-        `WA Embedded Signup: número ${phoneNumberId} reconectado (canal ${updated.id}, org ${organizationId}, status ${connectionStatus})`,
+        `WA Embedded Signup: número ${phoneNumberId} reconectado (canal ${updated.id}, org ${organizationId}, status ${finalStatus}, subscribed=${subscription.subscribed})`,
       );
       return updated;
     }
 
+    // skipAutoSubscribe: o onboarding controla o subscribe explicitamente para
+    // decidir o connectionStatus final a partir do resultado (evita o subscribe
+    // fire-and-forget do create correr em paralelo com este update).
     const created = await this.channels.create(
       organizationId,
       { type: ChannelType.WHATSAPP_OFFICIAL, name, config },
       creator,
+      { skipAutoSubscribe: true },
     );
+    const subscription = await this.channels.ensureWaOfficialSubscription(
+      created.id,
+    );
+    const finalStatus =
+      registered && subscription.subscribed ? 'connected' : 'needs_review';
     // SEGURO POR PADRÃO: canal do ES nasce com IA OFF e desativado. Sem agente
     // conectado automaticamente, sem resposta pública. Ativação é manual depois.
     const channel = await this.prisma.channel.update({
       where: { id: created.id },
-      data: { isActive: false, aiEnabled: false, connectionStatus },
+      data: { isActive: false, aiEnabled: false, connectionStatus: finalStatus },
     });
     this.logger.log(
-      `WA Embedded Signup: número ${phoneNumberId} conectado (canal ${channel.id}, WABA ${wabaId}, org ${organizationId}, status ${connectionStatus}, isActive=false, aiEnabled=false)`,
+      `WA Embedded Signup: número ${phoneNumberId} conectado (canal ${channel.id}, WABA ${wabaId}, org ${organizationId}, status ${finalStatus}, subscribed=${subscription.subscribed}, isActive=false, aiEnabled=false)`,
     );
     return channel;
   }

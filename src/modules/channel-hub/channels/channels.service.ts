@@ -64,6 +64,7 @@ export class ChannelsService {
     organizationId: string,
     dto: CreateChannelDto,
     creator?: { userOrganizationId: string; role: OrgRole },
+    opts?: { skipAutoSubscribe?: boolean },
   ) {
     await this.limitEnforcer.assertWithinLimit(organizationId, 'channel');
 
@@ -109,11 +110,16 @@ export class ChannelsService {
     }
 
     // WA Official needs the app explicitly subscribed to the WABA before Meta
-    // starts delivering webhooks. Fire-and-forget — fails silently when the
-    // token lacks `whatsapp_business_management` scope or businessAccountId
-    // is missing; the user can retry via PATCH /channels/:id/test.
-    if (dto.type === ChannelType.WHATSAPP_OFFICIAL) {
-      this.subscribeWaOfficialApp(channel.id).catch((err) =>
+    // starts delivering webhooks. The subscription result is persisted on the
+    // channel config (config.subscriptionStatus / lastSubscribeError) so a
+    // failure is never silent. Callers that drive the final connectionStatus
+    // themselves (e.g. Embedded Signup onboarding) pass skipAutoSubscribe and
+    // call ensureWaOfficialSubscription explicitly; here it is fire-and-forget.
+    if (
+      dto.type === ChannelType.WHATSAPP_OFFICIAL &&
+      !opts?.skipAutoSubscribe
+    ) {
+      this.ensureWaOfficialSubscription(channel.id).catch((err) =>
         this.logger.warn(
           `WA Official subscribe failed for channel ${channel.id}: ${err.message}`,
         ),
@@ -200,20 +206,67 @@ export class ChannelsService {
     this.logger.log(`Z-API webhook configured: ${webhookUrl}`);
   }
 
-  private async subscribeWaOfficialApp(channelId: string): Promise<void> {
+  /**
+   * Subscribes our app to the channel's WABA and records the outcome on the
+   * channel config so a failure is never silent. Uses the channel's own
+   * (client) access token — decrypted inside the HTTP client — never the
+   * platform token. Idempotent on Meta's side; safe to re-run from create,
+   * the Embedded Signup onboarding (new + reconnect) and testConnection.
+   * Never throws and never logs tokens.
+   */
+  async ensureWaOfficialSubscription(
+    channelId: string,
+  ): Promise<{ subscribed: boolean; error?: string }> {
     const channel = await this.repository.findById(channelId);
-    if (!channel) return;
+    if (!channel) return { subscribed: false, error: 'channel not found' };
     const config = (channel.config as Record<string, any>) || {};
+
     if (!config.businessAccountId) {
+      const error = 'missing businessAccountId';
       this.logger.warn(
-        `WA Official channel ${channelId} has no businessAccountId — skipping auto-subscribe (do it manually in Meta dashboard)`,
+        `WA Official channel ${channelId} has no businessAccountId — cannot subscribe app to WABA`,
       );
-      return;
+      await this.markSubscriptionStatus(channelId, config, false, error);
+      return { subscribed: false, error };
     }
-    await this.waOfficialHttpClient.subscribeApp(channel);
-    this.logger.log(
-      `WA Official app subscribed to WABA ${config.businessAccountId} (channel ${channelId})`,
-    );
+
+    try {
+      await this.waOfficialHttpClient.subscribeApp(channel);
+      await this.markSubscriptionStatus(channelId, config, true);
+      this.logger.log(
+        `WA Official app subscribed to WABA ${config.businessAccountId} (channel ${channelId})`,
+      );
+      return { subscribed: true };
+    } catch (err: any) {
+      const error =
+        err.response?.data?.error?.message || err.message || 'unknown error';
+      this.logger.warn(
+        `WA Official subscribe failed for channel ${channelId}: ${error}`,
+      );
+      await this.markSubscriptionStatus(channelId, config, false, error);
+      return { subscribed: false, error };
+    }
+  }
+
+  /** Persists the subscribe outcome on config without touching other fields
+   *  (notably the encrypted accessToken/appSecret). Never logged. */
+  private async markSubscriptionStatus(
+    channelId: string,
+    currentConfig: Record<string, any>,
+    subscribed: boolean,
+    error?: string,
+  ): Promise<void> {
+    const config: Record<string, any> = {
+      ...currentConfig,
+      subscriptionStatus: subscribed ? 'subscribed' : 'failed',
+    };
+    if (subscribed) {
+      config.subscribedAt = new Date().toISOString();
+      delete config.lastSubscribeError;
+    } else {
+      config.lastSubscribeError = error ?? 'unknown error';
+    }
+    await this.repository.update(channelId, { config });
   }
 
   async findAll(organizationId: string, access: ChannelAccess) {
@@ -379,13 +432,23 @@ export class ChannelsService {
 
         case ChannelType.WHATSAPP_OFFICIAL: {
           const info = await this.waOfficialHttpClient.verifyPhoneNumber(channel);
+          // Re-run the WABA app subscription so /test doubles as the recovery
+          // path when the original subscribe failed. The channel only counts as
+          // fully connected when both the number verifies AND the app is
+          // subscribed to the WABA (otherwise Meta delivers no webhooks).
+          const sub = await this.ensureWaOfficialSubscription(channel.id);
+          await this.repository.update(channel.id, {
+            connectionStatus: sub.subscribed ? 'connected' : 'needs_review',
+          });
           return {
-            success: true,
-            status: 'connected',
+            success: sub.subscribed,
+            status: sub.subscribed ? 'connected' : 'needs_review',
             data: {
               phoneNumber: info.display_phone_number,
               qualityRating: info.quality_rating,
               verifiedName: info.verified_name,
+              subscriptionStatus: sub.subscribed ? 'subscribed' : 'failed',
+              ...(sub.error ? { subscribeError: sub.error } : {}),
             },
           };
         }
