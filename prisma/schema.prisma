@@ -3,8 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Migrations/DDL rodam pela conexão de sistema (role owner), pois o
+  // DATABASE_URL de runtime (bullq_app) não tem permissão no schema public.
+  directUrl = env("DATABASE_SYSTEM_URL")
 }
 
 // ─── Enums ───────────────────────────────────────
