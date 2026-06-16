@@ -7,7 +7,11 @@ import {
 } from '@nestjs/common';
 import { Conversation, ConversationStatus } from '@prisma/client';
 import { ConversationsRepository, InboxFilters } from './conversations.repository';
-import { computeSendability } from '../channel-sendability';
+import {
+  computeSendability,
+  computeMessagingPolicy,
+  applyWindowGuard,
+} from '../channel-sendability';
 import { ConversationFsmService } from './conversation-fsm.service';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
@@ -168,7 +172,18 @@ export class ConversationsService {
         config: true,
       },
     });
-    const { canSend, sendBlockReason } = computeSendability(chRow, conversation.status);
+    const base = computeSendability(chRow, conversation.status);
+    // Janela de 24h (C2.1) — só busca a última inbound para WhatsApp oficial.
+    const lastInboundAt =
+      chRow?.type === 'WHATSAPP_OFFICIAL'
+        ? await this.repository.findLastInboundAt(conversation.id)
+        : null;
+    const messagingPolicy = computeMessagingPolicy(
+      chRow?.type,
+      lastInboundAt,
+      new Date(),
+    );
+    const { canSend, sendBlockReason } = applyWindowGuard(base, messagingPolicy);
     const channel = chRow
       ? {
           id: chRow.id,
@@ -181,7 +196,7 @@ export class ConversationsService {
         }
       : conversation.channel;
 
-    return { ...conversation, channel, crm: { activeCard } };
+    return { ...conversation, channel, crm: { activeCard }, messagingPolicy };
   }
 
   async update(

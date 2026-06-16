@@ -308,6 +308,17 @@ export class ConversationsRepository {
     });
   }
 
+  /** createdAt da última mensagem INBOUND da conversa (null se nunca houve).
+   *  Base da janela de 24h do WhatsApp. Usa idx_msg_conv_time. */
+  async findLastInboundAt(conversationId: string): Promise<Date | null> {
+    const msg = await this.prisma.message.findFirst({
+      where: { conversationId, direction: 'INBOUND' },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    return msg?.createdAt ?? null;
+  }
+
   async update(id: string, data: Prisma.ConversationUpdateInput) {
     return this.prisma.conversation.update({ where: { id }, data });
   }
