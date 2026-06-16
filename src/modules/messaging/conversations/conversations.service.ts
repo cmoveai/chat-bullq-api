@@ -117,6 +117,46 @@ export class ConversationsService {
     return conversation;
   }
 
+  /**
+   * Detalhe da conversa para o inbox (GET /conversations/:id) enriquecido com
+   * o card ("oportunidade") ativo no CRM. Mantido SEPARADO de findOne porque
+   * findOne é o guard reusado por assign/status/toggle — não deve carregar o
+   * lookup extra. A listagem (findMany) segue intocada/leve.
+   */
+  async getDetail(id: string, organizationId: string, access: ChannelAccess = 'ALL') {
+    const conversation = await this.findOne(id, organizationId, access);
+    const card = await this.repository.findActiveCard(
+      conversation.id,
+      conversation.contactId,
+    );
+    const activeCard = card
+      ? {
+          id: card.id,
+          title: card.title,
+          status: card.status,
+          value: card.value != null ? Number(card.value) : null,
+          currency: card.currency ?? null,
+          stage: card.stage ? { id: card.stage.id, name: card.stage.name } : null,
+          pipeline: card.pipeline
+            ? { id: card.pipeline.id, name: card.pipeline.name }
+            : null,
+          assignedTo: card.assignedTo
+            ? { id: card.assignedTo.id, name: card.assignedTo.name }
+            : null,
+          nextTask: card.tasks?.[0]
+            ? {
+                id: card.tasks[0].id,
+                title: card.tasks[0].title,
+                dueAt: card.tasks[0].dueDate
+                  ? card.tasks[0].dueDate.toISOString()
+                  : null,
+              }
+            : null,
+        }
+      : null;
+    return { ...conversation, crm: { activeCard } };
+  }
+
   async update(
     id: string,
     organizationId: string,
