@@ -5,6 +5,7 @@ import { WebhookGatewayController } from './webhook-gateway.controller';
 import { ChannelsController } from './channels/channels.controller';
 import { ChannelsService } from './channels/channels.service';
 import { ChannelsRepository } from './channels/channels.repository';
+import { WhatsappTemplatesService } from './channels/whatsapp-templates.service';
 import { WhatsAppOnboardingController } from './whatsapp-onboarding/whatsapp-onboarding.controller';
 import { WhatsAppOnboardingService } from './whatsapp-onboarding/whatsapp-onboarding.service';
 import { ZappfyModule } from './adapters/zappfy/zappfy.module';
@@ -60,6 +61,7 @@ import { WebhookThrottleGuard } from './webhook-throttle.guard';
     ChannelAdapterRegistry,
     ChannelsService,
     ChannelsRepository,
+    WhatsappTemplatesService,
     WhatsAppOnboardingService,
     ChannelSyncOrchestrator,
     ChannelSyncProcessor,
