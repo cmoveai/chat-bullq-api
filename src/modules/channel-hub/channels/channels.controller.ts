@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { ChannelsService } from './channels.service';
+import { WhatsappTemplatesService } from './whatsapp-templates.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { JwtAuthGuard, OrgGuard, RolesGuard } from '../../../common/guards';
@@ -23,7 +24,27 @@ import type { ChannelAccess } from '../../iam/channel-access/channel-access.serv
 @UseGuards(JwtAuthGuard, OrgGuard, RolesGuard)
 @Controller('channels')
 export class ChannelsController {
-  constructor(private readonly service: ChannelsService) {}
+  constructor(
+    private readonly service: ChannelsService,
+    private readonly templates: WhatsappTemplatesService,
+  ) {}
+
+  @Post(':id/templates/sync')
+  @Roles(OrgRole.OWNER, OrgRole.ADMIN)
+  @ApiOperation({ summary: 'Sync approved Meta templates for a WhatsApp Official channel' })
+  syncTemplates(@Param('id') id: string, @CurrentOrg('id') orgId: string) {
+    return this.templates.sync(id, orgId);
+  }
+
+  @Get(':id/templates')
+  @ApiOperation({ summary: 'List cached templates for a channel (approved + active by default)' })
+  listTemplates(
+    @Param('id') id: string,
+    @CurrentOrg('id') orgId: string,
+    @Query('status') status?: string,
+  ) {
+    return this.templates.list(id, orgId, { status });
+  }
 
   @Post()
   @ApiOperation({

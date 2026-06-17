@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ConversationStatus, Prisma } from '@prisma/client';
+import { CardStatus, ConversationStatus, Prisma, TaskStatus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
 
 export interface InboxFilters {
@@ -253,13 +253,70 @@ export class ConversationsRepository {
       where: { id },
       include: {
         contact: { include: { channels: true, tags: { include: { tag: true } } } },
-        channel: true,
+        // Sem `config`/`webhookSecret` — dados sensíveis do canal não vazam no
+        // payload do detalhe. O sendability é derivado à parte (getDetail).
+        channel: {
+          select: {
+            id: true,
+            type: true,
+            name: true,
+            isActive: true,
+            connectionStatus: true,
+          },
+        },
         assignedTo: { select: { id: true, name: true, avatarUrl: true } },
         department: true,
         tags: { include: { tag: true } },
         auditLogs: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
     });
+  }
+
+  /**
+   * Card ("oportunidade") ativo de uma conversa, para o painel de CRM do inbox.
+   * Prioriza o vínculo direto (cards.conversation_id); se não houver, usa o
+   * contato como fallback (cards.contact_id) — o vínculo direto ainda não é
+   * populado em boa parte dos dados. Só cards OPEN; o mais recente. Read-only.
+   */
+  async findActiveCard(conversationId: string, contactId: string | null) {
+    const include = {
+      stage: { select: { id: true, name: true } },
+      pipeline: { select: { id: true, name: true } },
+      assignedTo: { select: { id: true, name: true } },
+      tasks: {
+        where: {
+          status: { in: [TaskStatus.TODO, TaskStatus.IN_PROGRESS] },
+          deletedAt: null,
+        },
+        orderBy: { dueDate: 'asc' as const },
+        take: 1,
+      },
+    } satisfies Prisma.CardInclude;
+
+    const direct = await this.prisma.card.findFirst({
+      where: { conversationId, status: CardStatus.OPEN },
+      orderBy: { updatedAt: 'desc' },
+      include,
+    });
+    if (direct) return direct;
+
+    if (!contactId) return null;
+    return this.prisma.card.findFirst({
+      where: { contactId, status: CardStatus.OPEN },
+      orderBy: { updatedAt: 'desc' },
+      include,
+    });
+  }
+
+  /** createdAt da última mensagem INBOUND da conversa (null se nunca houve).
+   *  Base da janela de 24h do WhatsApp. Usa idx_msg_conv_time. */
+  async findLastInboundAt(conversationId: string): Promise<Date | null> {
+    const msg = await this.prisma.message.findFirst({
+      where: { conversationId, direction: 'INBOUND' },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    return msg?.createdAt ?? null;
   }
 
   async update(id: string, data: Prisma.ConversationUpdateInput) {

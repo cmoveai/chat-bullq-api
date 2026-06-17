@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -18,6 +19,11 @@ import {
   ChannelAccess,
   ChannelAccessService,
 } from '../../iam/channel-access/channel-access.service';
+import {
+  computeSendability,
+  computeMessagingPolicy,
+  SEND_BLOCK_MESSAGE,
+} from '../channel-sendability';
 
 @Injectable()
 export class MessagesService {
@@ -48,6 +54,41 @@ export class MessagesService {
       throw new ForbiddenException();
     }
     this.channelAccess.assertChannelAccess(access, conversation.channelId);
+
+    // Guard de envio: não cria mensagem nem enfileira outbound em canal demo /
+    // inativo / desconectado, nem em conversa finalizada. Bloqueia composer,
+    // API e automações no mesmo ponto (defesa em profundidade).
+    const { canSend, sendBlockReason } = computeSendability(
+      conversation.channel,
+      conversation.status,
+    );
+    if (!canSend && sendBlockReason) {
+      throw new BadRequestException(SEND_BLOCK_MESSAGE[sendBlockReason]);
+    }
+
+    // Janela 24h (C2.1): mensagem COMUM (não template) fora da janela de
+    // resposta do WhatsApp oficial é bloqueada antes de criar/enfileirar.
+    if (
+      conversation.channel?.type === 'WHATSAPP_OFFICIAL' &&
+      dto.type !== 'TEMPLATE'
+    ) {
+      const lastInbound = await this.prisma.message.findFirst({
+        where: {
+          conversationId: conversation.id,
+          direction: MessageDirection.INBOUND,
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      const policy = computeMessagingPolicy(
+        conversation.channel.type,
+        lastInbound?.createdAt ?? null,
+        new Date(),
+      );
+      if (policy?.requiresTemplate && policy.reason) {
+        throw new BadRequestException(SEND_BLOCK_MESSAGE[policy.reason]);
+      }
+    }
 
     const contactChannel = conversation.contact.channels.find(
       (cc) => cc.channelId === conversation.channelId,

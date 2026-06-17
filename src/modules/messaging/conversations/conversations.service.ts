@@ -7,6 +7,11 @@ import {
 } from '@nestjs/common';
 import { Conversation, ConversationStatus } from '@prisma/client';
 import { ConversationsRepository, InboxFilters } from './conversations.repository';
+import {
+  computeSendability,
+  computeMessagingPolicy,
+  applyWindowGuard,
+} from '../channel-sendability';
 import { ConversationFsmService } from './conversation-fsm.service';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
@@ -115,6 +120,83 @@ export class ConversationsService {
     }
     this.channelAccess.assertChannelAccess(access, conversation.channelId);
     return conversation;
+  }
+
+  /**
+   * Detalhe da conversa para o inbox (GET /conversations/:id) enriquecido com
+   * o card ("oportunidade") ativo no CRM. Mantido SEPARADO de findOne porque
+   * findOne é o guard reusado por assign/status/toggle — não deve carregar o
+   * lookup extra. A listagem (findMany) segue intocada/leve.
+   */
+  async getDetail(id: string, organizationId: string, access: ChannelAccess = 'ALL') {
+    const conversation = await this.findOne(id, organizationId, access);
+    const card = await this.repository.findActiveCard(
+      conversation.id,
+      conversation.contactId,
+    );
+    const activeCard = card
+      ? {
+          id: card.id,
+          title: card.title,
+          status: card.status,
+          value: card.value != null ? Number(card.value) : null,
+          currency: card.currency ?? null,
+          stage: card.stage ? { id: card.stage.id, name: card.stage.name } : null,
+          pipeline: card.pipeline
+            ? { id: card.pipeline.id, name: card.pipeline.name }
+            : null,
+          assignedTo: card.assignedTo
+            ? { id: card.assignedTo.id, name: card.assignedTo.name }
+            : null,
+          nextTask: card.tasks?.[0]
+            ? {
+                id: card.tasks[0].id,
+                title: card.tasks[0].title,
+                dueAt: card.tasks[0].dueDate
+                  ? card.tasks[0].dueDate.toISOString()
+                  : null,
+              }
+            : null,
+        }
+      : null;
+    // Canal seguro + sendability. `config` é lido só aqui (interno) para
+    // detectar demo/mock/sandbox e NUNCA é devolvido no payload.
+    const chRow = await this.prisma.channel.findUnique({
+      where: { id: conversation.channelId },
+      select: {
+        id: true,
+        type: true,
+        name: true,
+        isActive: true,
+        connectionStatus: true,
+        config: true,
+      },
+    });
+    const base = computeSendability(chRow, conversation.status);
+    // Janela de 24h (C2.1) — só busca a última inbound para WhatsApp oficial.
+    const lastInboundAt =
+      chRow?.type === 'WHATSAPP_OFFICIAL'
+        ? await this.repository.findLastInboundAt(conversation.id)
+        : null;
+    const messagingPolicy = computeMessagingPolicy(
+      chRow?.type,
+      lastInboundAt,
+      new Date(),
+    );
+    const { canSend, sendBlockReason } = applyWindowGuard(base, messagingPolicy);
+    const channel = chRow
+      ? {
+          id: chRow.id,
+          type: chRow.type,
+          name: chRow.name,
+          isActive: chRow.isActive,
+          connectionStatus: chRow.connectionStatus,
+          canSend,
+          sendBlockReason,
+        }
+      : conversation.channel;
+
+    return { ...conversation, channel, crm: { activeCard }, messagingPolicy };
   }
 
   async update(

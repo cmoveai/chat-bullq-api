@@ -3,8 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Migrations/DDL rodam pela conexão de sistema (role owner), pois o
+  // DATABASE_URL de runtime (bullq_app) não tem permissão no schema public.
+  directUrl = env("DATABASE_SYSTEM_URL")
 }
 
 // ─── Enums ───────────────────────────────────────
@@ -114,32 +117,32 @@ enum NotificationType {
 // ─── Core: Auth + Multi-tenancy ──────────────────
 
 model User {
-  id              String    @id @default(cuid())
-  name            String
-  email           String    @unique
-  password        String
-  avatarUrl       String?   @map("avatar_url")
-  isActive        Boolean   @default(true) @map("is_active")
-  emailVerifiedAt DateTime? @map("email_verified_at")
-  phone           String?
-  phoneVerifiedAt DateTime? @map("phone_verified_at")
-  cpfCnpj         String?   @map("cpf_cnpj")
-  companySize     String?   @map("company_size")
-  otpCode         String?   @map("otp_code")
-  otpType         String?   @map("otp_type")
-  otpExpiresAt    DateTime? @map("otp_expires_at")
-  otpAttempts     Int       @default(0) @map("otp_attempts")
+  id                   String     @id @default(cuid())
+  name                 String
+  email                String     @unique
+  password             String
+  avatarUrl            String?    @map("avatar_url")
+  isActive             Boolean    @default(true) @map("is_active")
+  emailVerifiedAt      DateTime?  @map("email_verified_at")
+  phone                String?
+  phoneVerifiedAt      DateTime?  @map("phone_verified_at")
+  cpfCnpj              String?    @map("cpf_cnpj")
+  companySize          String?    @map("company_size")
+  otpCode              String?    @map("otp_code")
+  otpType              String?    @map("otp_type")
+  otpExpiresAt         DateTime?  @map("otp_expires_at")
+  otpAttempts          Int        @default(0) @map("otp_attempts")
   // Cyber Onda 2 · #21 · 2FA TOTP (Google Authenticator/Authy)
-  twoFactorEnabled       Boolean  @default(false) @map("two_factor_enabled")
-  twoFactorSecret        String?  @map("two_factor_secret") // criptografado app-level (TOTP_ENC_KEY)
-  twoFactorBackupCodes   String?  @map("two_factor_backup_codes") // JSON array criptografado
-  twoFactorEnabledAt     DateTime? @map("two_factor_enabled_at")
+  twoFactorEnabled     Boolean    @default(false) @map("two_factor_enabled")
+  twoFactorSecret      String?    @map("two_factor_secret") // criptografado app-level (TOTP_ENC_KEY)
+  twoFactorBackupCodes String?    @map("two_factor_backup_codes") // JSON array criptografado
+  twoFactorEnabledAt   DateTime?  @map("two_factor_enabled_at")
   // Cyber Onda 2 · #22 · SSO Google
-  googleId               String?  @unique @map("google_id")
-  globalRole      GlobalRole @default(USER) @map("global_role")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  deletedAt       DateTime? @map("deleted_at")
+  googleId             String?    @unique @map("google_id")
+  globalRole           GlobalRole @default(USER) @map("global_role")
+  createdAt            DateTime   @default(now()) @map("created_at")
+  updatedAt            DateTime   @updatedAt @map("updated_at")
+  deletedAt            DateTime?  @map("deleted_at")
 
   organizations         UserOrganization[]
   assignedConversations Conversation[]     @relation("AssignedAgent")
@@ -159,18 +162,18 @@ model User {
 }
 
 model Organization {
-  id        String    @id @default(cuid())
-  name      String
-  slug      String    @unique
-  logoUrl   String?   @map("logo_url")
-  plan      String    @default("free")
-  settings  Json      @default("{}")
+  id                    String    @id @default(cuid())
+  name                  String
+  slug                  String    @unique
+  logoUrl               String?   @map("logo_url")
+  plan                  String    @default("free")
+  settings              Json      @default("{}")
   // Onboarding wizard ICP capture · pós-signup · 4 perguntas
   onboardingCompletedAt DateTime? @map("onboarding_completed_at")
   onboardingData        Json      @default("{}") @map("onboarding_data")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  deletedAt             DateTime? @map("deleted_at")
 
   // ─── AI settings ────────────────────────────────
   // Default false: novo tenant nasce com IA OFF (opt-in). Só afeta linhas novas;
@@ -182,39 +185,40 @@ model Organization {
   aiAutoDisableOnHuman Boolean @default(true) @map("ai_auto_disable_on_human")
   aiMonthlyTokenCap    Int?    @map("ai_monthly_token_cap")
 
-  members       UserOrganization[]
-  channels      Channel[]
-  contacts      Contact[]
-  conversations Conversation[]
-  departments   Department[]
-  chatbotFlows  ChatbotFlow[]
-  quickReplies  QuickReply[]
-  tags          Tag[]
-  notifications Notification[]
-  invitations   Invitation[]
-  apiKeys       ApiKey[]
-  aiAgents      AiAgent[]
-  aiTools       AiTool[]
-  aiSkills      AiSkill[]
-  inboxViews    InboxView[]
-  pipelines     Pipeline[]
-  cards         Card[]
-  cardStageHistory CardStageHistory[]
-  sdrActionLog  SdrActionLog[]
-  followupExecutions FollowupExecution[]
+  members               UserOrganization[]
+  channels              Channel[]
+  contacts              Contact[]
+  conversations         Conversation[]
+  departments           Department[]
+  chatbotFlows          ChatbotFlow[]
+  quickReplies          QuickReply[]
+  tags                  Tag[]
+  notifications         Notification[]
+  invitations           Invitation[]
+  apiKeys               ApiKey[]
+  aiAgents              AiAgent[]
+  aiTools               AiTool[]
+  aiSkills              AiSkill[]
+  inboxViews            InboxView[]
+  pipelines             Pipeline[]
+  cards                 Card[]
+  cardStageHistory      CardStageHistory[]
+  sdrActionLog          SdrActionLog[]
+  followupExecutions    FollowupExecution[]
   chatbotFlowExecutions ChatbotFlowExecution[]
   chatbotExecutionSteps ChatbotExecutionStep[]
-  metaCapiConfig MetaCapiConfig?
-  conversionEvents ConversionEvent[]
-  products      Product[]
-  supportTickets SupportTicket[]
-  subscription  Subscription?
-  usageEvents   UsageEvent[]
-  cobrancas     Cobranca[]
-  tasks         Task[]
-  automations   Automation[]
-  knowledgeBases KnowledgeBase[]
-  socialInteractions SocialInteraction[]
+  metaCapiConfig        MetaCapiConfig?
+  conversionEvents      ConversionEvent[]
+  products              Product[]
+  supportTickets        SupportTicket[]
+  subscription          Subscription?
+  usageEvents           UsageEvent[]
+  cobrancas             Cobranca[]
+  tasks                 Task[]
+  automations           Automation[]
+  knowledgeBases        KnowledgeBase[]
+  socialInteractions    SocialInteraction[]
+  whatsappTemplates     WhatsappTemplate[]
 
   @@map("organizations")
 }
@@ -271,39 +275,78 @@ model Invitation {
 // ─── Channel Hub ─────────────────────────────────
 
 model Channel {
-  id             String      @id @default(cuid())
-  organizationId String      @map("organization_id")
-  type           ChannelType
-  name           String
-  config         Json
-  webhookSecret  String?     @map("webhook_secret")
-  isActive       Boolean     @default(true) @map("is_active")
-  visibility     ChannelVisibility @default(ORG)
+  id               String            @id @default(cuid())
+  organizationId   String            @map("organization_id")
+  type             ChannelType
+  name             String
+  config           Json
+  webhookSecret    String?           @map("webhook_secret")
+  isActive         Boolean           @default(true) @map("is_active")
+  visibility       ChannelVisibility @default(ORG)
   // Tri-state override: NULL=segue org.aiEnabled, true=força ON, false=força OFF.
   // Permite o operador desligar a IA num canal específico (ex: 1581 produção)
   // sem precisar mexer no toggle global da org.
-  aiEnabled      Boolean?    @map("ai_enabled")
+  aiEnabled        Boolean?          @map("ai_enabled")
   // Estado de conexão (String, sem enum novo): not_connected | pending |
   // connected | failed | needs_review | revoked. Onboarding (Embedded Signup)
   // transita pending→connected/needs_review/failed. Default connected p/ canais
   // legados (já estavam conectados).
-  connectionStatus String   @default("connected") @map("connection_status")
-  createdAt      DateTime    @default(now()) @map("created_at")
-  updatedAt      DateTime    @updatedAt @map("updated_at")
-  deletedAt      DateTime?   @map("deleted_at")
+  connectionStatus String            @default("connected") @map("connection_status")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  deletedAt        DateTime?         @map("deleted_at")
 
-  organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contactChannels ContactChannel[]
-  conversations   Conversation[]
-  chatbotFlows    ChatbotFlowChannel[]
-  syncJobs        ChannelSyncJob[]
-  channelAgents   ChannelAgent[]
-  aiAgentChannels AiAgentChannel[]
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contactChannels    ContactChannel[]
+  conversations      Conversation[]
+  chatbotFlows       ChatbotFlowChannel[]
+  syncJobs           ChannelSyncJob[]
+  channelAgents      ChannelAgent[]
+  aiAgentChannels    AiAgentChannel[]
   socialInteractions SocialInteraction[]
-  automations     Automation[]
+  automations        Automation[]
+  whatsappTemplates  WhatsappTemplate[]
 
   @@index([organizationId, type], name: "idx_channel_org_type")
   @@map("channels")
+}
+
+// Cache local dos templates aprovados da Meta (WhatsApp Business). Populado por
+// sync (C2.3b) a partir do Graph; consumido pelo Inbox para enviar template e
+// reabrir conversa fora da janela de 24h. Escopo rígido por org+canal+WABA.
+model WhatsappTemplate {
+  id                 String  @id @default(cuid())
+  organizationId     String  @map("organization_id")
+  channelId          String  @map("channel_id")
+  wabaId             String  @map("waba_id")
+  externalTemplateId String? @map("external_template_id")
+
+  name     String
+  language String
+  category String?
+  status   String
+
+  components      Json
+  parameterSchema Json? @map("parameter_schema")
+
+  qualityScore   String? @map("quality_score")
+  rejectedReason String? @map("rejected_reason")
+
+  isActive  Boolean   @default(true) @map("is_active")
+  deletedAt DateTime? @map("deleted_at")
+  syncedAt  DateTime? @map("synced_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, name, language], name: "uq_wa_template_channel_name_lang")
+  @@index([organizationId, channelId])
+  @@index([channelId, status])
+  @@index([wabaId])
+  @@map("whatsapp_templates")
 }
 
 model ChannelAgent {
@@ -403,9 +446,9 @@ model Contact {
   deletedAt      DateTime? @map("deleted_at")
 
   // Atribuição / origem do lead — omnichannel (Fase 1). Agnóstico de canal.
-  sourceType           String? @map("source_type")            // instagram_dm | instagram_comment | instagram_story_reply | instagram_mention | click_to_instagram_dm | whatsapp | click_to_whatsapp | landing_page | webchat
-  sourceChannel        String? @map("source_channel")         // channel.type de origem
-  externalUserId       String? @map("external_user_id")       // id do usuário na plataforma de origem (IG user id, wa id...)
+  sourceType           String? @map("source_type") // instagram_dm | instagram_comment | instagram_story_reply | instagram_mention | click_to_instagram_dm | whatsapp | click_to_whatsapp | landing_page | webchat
+  sourceChannel        String? @map("source_channel") // channel.type de origem
+  externalUserId       String? @map("external_user_id") // id do usuário na plataforma de origem (IG user id, wa id...)
   campaignId           String? @map("campaign_id")
   campaignName         String? @map("campaign_name")
   adId                 String? @map("ad_id")
@@ -424,14 +467,14 @@ model Contact {
   firstInteractionType String? @map("first_interaction_type")
   referralSource       String? @map("referral_source")
 
-  organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  channels      ContactChannel[]
-  conversations Conversation[]
-  tags          ContactTag[]
-  aiMemories    AiAgentMemory[]
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channels           ContactChannel[]
+  conversations      Conversation[]
+  tags               ContactTag[]
+  aiMemories         AiAgentMemory[]
   socialInteractions SocialInteraction[]
-  cards         Card[]           @relation("CardContact")
-  tasks         Task[]
+  cards              Card[]              @relation("CardContact")
+  tasks              Task[]
 
   @@index([organizationId, phone], name: "idx_contact_org_phone")
   @@index([organizationId, email], name: "idx_contact_org_email")
@@ -480,12 +523,12 @@ model Conversation {
   // Orthogonal to `status` — archived conversations are hidden from the
   // main inbox but their status (OPEN/PENDING/etc.) is preserved so they
   // re-appear in the right place when unarchived.
-  isArchived     Boolean   @default(false) @map("is_archived")
-  archivedAt     DateTime? @map("archived_at")
-  archivedById   String?   @map("archived_by_id")
-  metadata        Json               @default("{}")
-  createdAt       DateTime           @default(now()) @map("created_at")
-  updatedAt       DateTime           @updatedAt @map("updated_at")
+  isArchived   Boolean   @default(false) @map("is_archived")
+  archivedAt   DateTime? @map("archived_at")
+  archivedById String?   @map("archived_by_id")
+  metadata     Json      @default("{}")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   // ─── AI state (tri-state override) ──────────────
   // null  = segue regras globais (org.aiEnabled, business hours, agent)
@@ -503,17 +546,17 @@ model Conversation {
   department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   activeAgent  AiAgent?     @relation("ActiveAgent", fields: [activeAgentId], references: [id], onDelete: SetNull)
 
-  messages      Message[]
-  tags          ConversationTag[]
-  internalNotes InternalNote[]
-  auditLogs     ConversationAuditLog[]
-  rating        ConversationRating?
-  aiRuns        AiAgentRun[]
-  aiHandoffs    AiAgentHandoff[]
-  reads         ConversationRead[]
+  messages           Message[]
+  tags               ConversationTag[]
+  internalNotes      InternalNote[]
+  auditLogs          ConversationAuditLog[]
+  rating             ConversationRating?
+  aiRuns             AiAgentRun[]
+  aiHandoffs         AiAgentHandoff[]
+  reads              ConversationRead[]
   socialInteractions SocialInteraction[]
-  cards         Card[]                 @relation("CardConversation")
-  tasks         Task[]
+  cards              Card[]                 @relation("CardConversation")
+  tasks              Task[]
 
   @@index([organizationId, status], name: "idx_conv_org_status")
   @@index([organizationId, assignedToId], name: "idx_conv_org_agent")
@@ -584,7 +627,7 @@ model Message {
   status         MessageStatus      @default(QUEUED)
   senderName     String?            @map("sender_name")
   senderId       String?            @map("sender_id")
-  source         String?            // omnichannel: instagram_dm | instagram_comment | instagram_story_reply | instagram_mention | whatsapp | webchat | ad_ctwa | ad_ctig (TEXT, não enum — novos canais sem migration)
+  source         String? // omnichannel: instagram_dm | instagram_comment | instagram_story_reply | instagram_mention | whatsapp | webchat | ad_ctwa | ad_ctig (TEXT, não enum — novos canais sem migration)
   sentAt         DateTime?          @map("sent_at")
   deliveredAt    DateTime?          @map("delivered_at")
   readAt         DateTime?          @map("read_at")
@@ -723,20 +766,20 @@ model ChatbotFlowChannel {
 // nó vão em ChatbotExecutionStep. `status`: running | waiting | ended | failed |
 // cancelled. `dryRun` distingue simulação de execução real.
 model ChatbotFlowExecution {
-  id             String   @id @default(cuid())
-  organizationId String   @map("organization_id")
-  flowId         String   @map("flow_id")
-  conversationId String   @map("conversation_id")
-  currentNode    String?  @map("current_node")
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  flowId         String    @map("flow_id")
+  conversationId String    @map("conversation_id")
+  currentNode    String?   @map("current_node")
   action         String?
-  status         String   @default("ok") // running | waiting | ended | failed | cancelled
+  status         String    @default("ok") // running | waiting | ended | failed | cancelled
   error          String?
-  dryRun         Boolean  @default(false) @map("dry_run")
-  triggerSource  String?  @map("trigger_source") // inbound | simulate | resume
+  dryRun         Boolean   @default(false) @map("dry_run")
+  triggerSource  String?   @map("trigger_source") // inbound | simulate | resume
   finishedAt     DateTime? @map("finished_at")
-  createdAt      DateTime @default(now()) @map("created_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   steps        ChatbotExecutionStep[]
 
   @@index([organizationId, createdAt])
@@ -1026,7 +1069,7 @@ model AiAgent {
   // Hard gating de tools por agente (Fase 2.5). VAZIO = sem restrição (usa o
   // escopo por kind, retrocompatível). NÃO-VAZIO = o agente só enxerga e só
   // pode executar os built-ins desta lista (filtro real no runner, não só prompt).
-  allowedTools String[]    @default([]) @map("allowed_tools")
+  allowedTools String[] @default([]) @map("allowed_tools")
 
   // ─── Organograma matricial ágil ────────────────────────────
   // parentAgentId: chefia direta — quem este agent reporta. Null = raiz (CEO/diretoria).
@@ -1060,18 +1103,18 @@ model AiAgent {
   // Quando ON, este agent tenta coletar Nome / Tel / Email (e custom
   // contact fields da org) durante a conversa. Resultado fica em
   // Contact.metadata.customFields.
-  collectContactData Boolean @default(false) @map("collect_contact_data")
+  collectContactData    Boolean  @default(false) @map("collect_contact_data")
   collectStandardFields String[] @default(["name", "phone", "email"]) @map("collect_standard_fields")
   collectCustomFieldIds String[] @default([]) @map("collect_custom_field_ids")
 
   // Lead qualification: roda um pass de IA separado pra classificar
   // o lead (Quente / Morno / Frio · score · próxima ação). Resultado
   // salvo em Conversation.metadata.leadQualification.
-  leadQualificationEnabled Boolean @default(false) @map("lead_qualification_enabled")
-  leadQualificationModelId String? @map("lead_qualification_model_id")
-  leadQualificationTrigger AgentLeadQualificationTrigger @default(WHEN_CONVERSATION_ENDS) @map("lead_qualification_trigger")
-  leadQualificationMessageCount Int @default(5) @map("lead_qualification_message_count")
-  leadQualificationPrompt String? @map("lead_qualification_prompt")
+  leadQualificationEnabled      Boolean                       @default(false) @map("lead_qualification_enabled")
+  leadQualificationModelId      String?                       @map("lead_qualification_model_id")
+  leadQualificationTrigger      AgentLeadQualificationTrigger @default(WHEN_CONVERSATION_ENDS) @map("lead_qualification_trigger")
+  leadQualificationMessageCount Int                           @default(5) @map("lead_qualification_message_count")
+  leadQualificationPrompt       String?                       @map("lead_qualification_prompt")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1079,13 +1122,13 @@ model AiAgent {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  channels     AiAgentChannel[]
-  memories     AiAgentMemory[]
-  runs         AiAgentRun[]
-  handoffsFrom AiAgentHandoff[] @relation("HandoffFrom")
-  handoffsTo   AiAgentHandoff[] @relation("HandoffTo")
-  activeOn     Conversation[]   @relation("ActiveAgent")
-  skills       AiAgentSkill[]
+  channels           AiAgentChannel[]
+  memories           AiAgentMemory[]
+  runs               AiAgentRun[]
+  handoffsFrom       AiAgentHandoff[]     @relation("HandoffFrom")
+  handoffsTo         AiAgentHandoff[]     @relation("HandoffTo")
+  activeOn           Conversation[]       @relation("ActiveAgent")
+  skills             AiAgentSkill[]
   knowledgeBaseLinks AgentKnowledgeBase[]
 
   @@index([organizationId], name: "idx_ai_agent_org")
@@ -1481,15 +1524,15 @@ model Card {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  pipeline     Pipeline      @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
-  stage        PipelineStage @relation(fields: [stageId], references: [id])
-  contact      Contact?      @relation("CardContact", fields: [contactId], references: [id], onDelete: SetNull)
-  conversation Conversation? @relation("CardConversation", fields: [conversationId], references: [id], onDelete: SetNull)
-  assignedTo   User?         @relation("CardAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
-  cobrancas    Cobranca[]
-  tasks        Task[]
-  stageHistory CardStageHistory[]
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pipeline           Pipeline            @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  stage              PipelineStage       @relation(fields: [stageId], references: [id])
+  contact            Contact?            @relation("CardContact", fields: [contactId], references: [id], onDelete: SetNull)
+  conversation       Conversation?       @relation("CardConversation", fields: [conversationId], references: [id], onDelete: SetNull)
+  assignedTo         User?               @relation("CardAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  cobrancas          Cobranca[]
+  tasks              Task[]
+  stageHistory       CardStageHistory[]
   followupExecutions FollowupExecution[]
 
   @@index([pipelineId, stageId, order])
@@ -1628,23 +1671,23 @@ enum SupportTicketPriority {
 }
 
 model SupportTicket {
-  id             String  @id @default(cuid())
-  organizationId String  @map("organization_id")
-  conversationId String? @map("conversation_id")
-  contactId      String? @map("contact_id")
-  agentId        String? @map("agent_id")
+  id             String                @id @default(cuid())
+  organizationId String                @map("organization_id")
+  conversationId String?               @map("conversation_id")
+  contactId      String?               @map("contact_id")
+  agentId        String?               @map("agent_id")
   category       String
-  briefing       String  @db.Text
-  customerEmail  String? @map("customer_email")
-  customerPhone  String? @map("customer_phone")
+  briefing       String                @db.Text
+  customerEmail  String?               @map("customer_email")
+  customerPhone  String?               @map("customer_phone")
   priority       SupportTicketPriority @default(NORMAL)
   status         SupportTicketStatus   @default(OPEN)
-  metadata       Json    @default("{}")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-  resolvedAt     DateTime? @map("resolved_at")
+  metadata       Json                  @default("{}")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+  resolvedAt     DateTime?             @map("resolved_at")
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, status, createdAt])
   @@index([conversationId])
@@ -1706,25 +1749,25 @@ enum AuthTokenType {
 // Catálogo público de planos. Preços em CENTAVOS pra evitar problemas com
 // float em BRL. Limites null = ilimitado. Code é stable identifier.
 model Plan {
-  id                     String  @id @default(cuid())
-  code                   String  @unique // SOLO · TIME · NEGOCIO · EMPRESA
-  name                   String
-  priceMonthlyCents      Int     @map("price_monthly_cents")
-  description            String?
-  maxChannels            Int?    @map("max_channels")
-  maxConversationsMonth  Int?    @map("max_conversations_month")
-  maxAgents              Int?    @map("max_agents")
-  maxTools               Int?    @map("max_tools")
-  maxMembers             Int?    @map("max_members")
-  maxContacts            Int?    @map("max_contacts")
-  maxEmailsSentMonth     Int?    @map("max_emails_sent_month")
-  emailReceiveEnabled    Boolean @default(false) @map("email_receive_enabled")
-  maxCampaignsMonth      Int?    @map("max_campaigns_month")
-  aiCreditCents          Int     @default(0) @map("ai_credit_cents")
-  isActive               Boolean @default(true) @map("is_active")
-  sortOrder              Int     @default(0) @map("sort_order")
-  createdAt              DateTime @default(now()) @map("created_at")
-  updatedAt              DateTime @updatedAt @map("updated_at")
+  id                    String   @id @default(cuid())
+  code                  String   @unique // SOLO · TIME · NEGOCIO · EMPRESA
+  name                  String
+  priceMonthlyCents     Int      @map("price_monthly_cents")
+  description           String?
+  maxChannels           Int?     @map("max_channels")
+  maxConversationsMonth Int?     @map("max_conversations_month")
+  maxAgents             Int?     @map("max_agents")
+  maxTools              Int?     @map("max_tools")
+  maxMembers            Int?     @map("max_members")
+  maxContacts           Int?     @map("max_contacts")
+  maxEmailsSentMonth    Int?     @map("max_emails_sent_month")
+  emailReceiveEnabled   Boolean  @default(false) @map("email_receive_enabled")
+  maxCampaignsMonth     Int?     @map("max_campaigns_month")
+  aiCreditCents         Int      @default(0) @map("ai_credit_cents")
+  isActive              Boolean  @default(true) @map("is_active")
+  sortOrder             Int      @default(0) @map("sort_order")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
 
   subscriptions Subscription[]
 
@@ -1735,21 +1778,21 @@ model Plan {
 // kirvanoSubscriptionId fica null durante trial · preenche quando cliente
 // converte e gera o primeiro checkout (PR 2.2).
 model Subscription {
-  id                     String   @id @default(cuid())
-  organizationId         String   @unique @map("organization_id")
-  planCode               String   @map("plan_code")
-  status                 SubscriptionStatus @default(TRIAL)
-  trialEndsAt            DateTime? @map("trial_ends_at")
-  startedAt              DateTime  @default(now()) @map("started_at")
-  nextBillingAt          DateTime? @map("next_billing_at")
-  canceledAt             DateTime? @map("canceled_at")
-  kirvanoSubscriptionId  String?   @unique @map("kirvano_subscription_id")
-  metadata               Json      @default("{}")
-  createdAt              DateTime  @default(now()) @map("created_at")
-  updatedAt              DateTime  @updatedAt @map("updated_at")
+  id                    String             @id @default(cuid())
+  organizationId        String             @unique @map("organization_id")
+  planCode              String             @map("plan_code")
+  status                SubscriptionStatus @default(TRIAL)
+  trialEndsAt           DateTime?          @map("trial_ends_at")
+  startedAt             DateTime           @default(now()) @map("started_at")
+  nextBillingAt         DateTime?          @map("next_billing_at")
+  canceledAt            DateTime?          @map("canceled_at")
+  kirvanoSubscriptionId String?            @unique @map("kirvano_subscription_id")
+  metadata              Json               @default("{}")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  plan         Plan         @relation(fields: [planCode], references: [code])
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         Plan             @relation(fields: [planCode], references: [code])
   invoices     BillingInvoice[]
 
   @@index([status, nextBillingAt])
@@ -1766,16 +1809,16 @@ enum SubscriptionStatus {
 
 // Faturas geradas/recebidas via Kirvano. amount em centavos.
 model BillingInvoice {
-  id                String        @id @default(cuid())
-  subscriptionId    String        @map("subscription_id")
-  amountCents       Int           @map("amount_cents")
-  dueDate           DateTime      @map("due_date") @db.Date
-  paidAt            DateTime?     @map("paid_at")
-  status            InvoiceStatus @default(PENDING)
-  kirvanoInvoiceId  String?       @unique @map("kirvano_invoice_id")
-  metadata          Json          @default("{}")
-  createdAt         DateTime      @default(now()) @map("created_at")
-  updatedAt         DateTime      @updatedAt @map("updated_at")
+  id               String        @id @default(cuid())
+  subscriptionId   String        @map("subscription_id")
+  amountCents      Int           @map("amount_cents")
+  dueDate          DateTime      @map("due_date") @db.Date
+  paidAt           DateTime?     @map("paid_at")
+  status           InvoiceStatus @default(PENDING)
+  kirvanoInvoiceId String?       @unique @map("kirvano_invoice_id")
+  metadata         Json          @default("{}")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
 
   subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
@@ -1796,11 +1839,11 @@ enum InvoiceStatus {
 // Type genérico permite contar conversas, runs IA, tool calls etc.
 // Não tem update/delete · append-only. Cleanup via cron 12 meses.
 model UsageEvent {
-  id              String   @id @default(cuid())
-  organizationId  String   @map("organization_id")
-  type            String   // 'conversation' · 'agent_run' · 'tool_call'
-  metadata        Json     @default("{}")
-  createdAt       DateTime @default(now()) @map("created_at")
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  type           String // 'conversation' · 'agent_run' · 'tool_call'
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -1812,42 +1855,42 @@ model UsageEvent {
 // Cliente recebe link zap.cmove.ai/pagar/[slug] com QR + botão "Já paguei".
 // Status muda pra AGUARDANDO_CONFIRMACAO até admin validar (ou webhook Santander auto-confirmar).
 model Cobranca {
-  id                String          @id @default(cuid())
-  slug              String          @unique
-  organizationId    String?         @map("organization_id")
-  clienteNome       String          @map("cliente_nome")
-  clienteRazaoSocial String?        @map("cliente_razao_social")
-  clienteCnpj       String?         @map("cliente_cnpj")
-  clienteEmail      String?         @map("cliente_email")
-  clienteTelefone   String?         @map("cliente_telefone")
-  etapa             String
-  valor             Decimal         @db.Decimal(12, 2)
-  vencimento        DateTime        @db.Date
-  pixChave          String          @map("pix_chave")
-  pixEmv            String?         @map("pix_emv")
-  pixTxid           String?         @map("pix_txid")
-  nfUrl             String?         @map("nf_url")
-  status            CobrancaStatus  @default(AGUARDANDO)
-  pagoEm            DateTime?       @map("pago_em")
-  whatsappComprovante String?       @default("5511943464000") @map("whatsapp_comprovante")
+  id                  String         @id @default(cuid())
+  slug                String         @unique
+  organizationId      String?        @map("organization_id")
+  clienteNome         String         @map("cliente_nome")
+  clienteRazaoSocial  String?        @map("cliente_razao_social")
+  clienteCnpj         String?        @map("cliente_cnpj")
+  clienteEmail        String?        @map("cliente_email")
+  clienteTelefone     String?        @map("cliente_telefone")
+  etapa               String
+  valor               Decimal        @db.Decimal(12, 2)
+  vencimento          DateTime       @db.Date
+  pixChave            String         @map("pix_chave")
+  pixEmv              String?        @map("pix_emv")
+  pixTxid             String?        @map("pix_txid")
+  nfUrl               String?        @map("nf_url")
+  status              CobrancaStatus @default(AGUARDANDO)
+  pagoEm              DateTime?      @map("pago_em")
+  whatsappComprovante String?        @default("5511943464000") @map("whatsapp_comprovante")
 
   // Automação · recorrência + lembretes
-  recorrente         Boolean   @default(false)
-  recorrenciaDias    Int?      @map("recorrencia_dias")
-  lembretesEnviados  Json      @default("[]") @map("lembretes_enviados")
-  cobrancaAnteriorId String?   @map("cobranca_anterior_id")
-  notificacaoStatus  Json?     @map("notificacao_status")
+  recorrente         Boolean @default(false)
+  recorrenciaDias    Int?    @map("recorrencia_dias")
+  lembretesEnviados  Json    @default("[]") @map("lembretes_enviados")
+  cobrancaAnteriorId String? @map("cobranca_anterior_id")
+  notificacaoStatus  Json?   @map("notificacao_status")
 
   // Origem · liga cobrança ao pipeline (Card que gerou)
-  cardId            String?   @map("card_id")
+  cardId String? @map("card_id")
 
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  organization     Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  cobrancaAnterior Cobranca?    @relation("CobrancaRecorrencia", fields: [cobrancaAnteriorId], references: [id], onDelete: SetNull)
-  proximasCobrancas Cobranca[]  @relation("CobrancaRecorrencia")
-  card             Card?         @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  cobrancaAnterior  Cobranca?     @relation("CobrancaRecorrencia", fields: [cobrancaAnteriorId], references: [id], onDelete: SetNull)
+  proximasCobrancas Cobranca[]    @relation("CobrancaRecorrencia")
+  card              Card?         @relation(fields: [cardId], references: [id], onDelete: SetNull)
 
   @@index([status, vencimento])
   @@index([organizationId])
