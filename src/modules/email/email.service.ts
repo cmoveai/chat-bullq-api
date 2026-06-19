@@ -25,7 +25,7 @@ export class EmailService {
     private readonly prisma: PrismaService,
   ) {
     const apiKey = this.config.get<string>('RESEND_API_KEY');
-    this.from = this.config.get<string>('EMAIL_FROM', 'EIXXO <cris@cmove.ai>');
+    this.from = this.config.get<string>('EMAIL_FROM', 'EIXXO <no-reply@eixxohub.com>');
     this.appUrl = this.config.get<string>('APP_URL', 'https://app.eixxohub.com');
 
     if (!apiKey) {
@@ -34,6 +34,31 @@ export class EmailService {
     } else {
       this.resend = new Resend(apiKey);
     }
+  }
+
+  /**
+   * Loga o resultado de um envio Resend de forma honesta.
+   * O SDK do Resend NÃO lança em erro de API (4xx/5xx) — devolve `{ data, error }`.
+   * Sem este check, um envio rejeitado era logado como "sent". Aqui logamos a falha
+   * real (status + nome + mensagem), sem expor key, token nem payload.
+   */
+  private logSendResult(
+    kind: string,
+    to: string,
+    result: {
+      data?: { id?: string } | null;
+      error?: { statusCode?: number; name?: string; message?: string } | null;
+    },
+    extra = '',
+  ): void {
+    if (result?.error) {
+      const e = result.error;
+      this.logger.error(
+        `${kind} email FAILED to ${to} · resend ${e.statusCode ?? ''} ${e.name ?? ''} · ${e.message ?? 'unknown error'}${extra}`,
+      );
+      return;
+    }
+    this.logger.log(`${kind} email sent to ${to} · resend id ${result?.data?.id ?? 'n/a'}${extra}`);
   }
 
   /**
@@ -54,7 +79,7 @@ export class EmailService {
         html: opts.html,
         text: opts.text ?? opts.html.replace(/<[^>]+>/g, ''),
       });
-      this.logger.log(`Raw email sent to ${opts.to} · resend id ${result.data?.id ?? 'n/a'}`);
+      this.logSendResult('Raw', opts.to, result);
     } catch (err: any) {
       this.logger.error(`Failed sendRaw to ${opts.to}: ${err.message}`);
     }
@@ -76,7 +101,7 @@ export class EmailService {
         html,
         text,
       });
-      this.logger.log(`Welcome email sent to ${to} · resend id ${result.data?.id ?? 'n/a'}`);
+      this.logSendResult('Welcome', to, result);
     } catch (err: any) {
       this.logger.error(`Failed to send welcome email to ${to}: ${err.message}`);
     }
@@ -90,7 +115,7 @@ export class EmailService {
     }
     try {
       const result = await this.resend.emails.send({ from: this.from, to, subject, html, text });
-      this.logger.log(`Verify email sent to ${to} · resend id ${result.data?.id ?? 'n/a'}`);
+      this.logSendResult('Verify', to, result);
     } catch (err: any) {
       this.logger.error(`Failed to send verify email to ${to}: ${err.message}`);
     }
@@ -123,7 +148,7 @@ export class EmailService {
     }
     try {
       const result = await this.resend.emails.send({ from: this.from, to, subject, html, text });
-      this.logger.log(`OTP email sent to ${to} · resend id ${result.data?.id ?? 'n/a'}`);
+      this.logSendResult('OTP', to, result);
     } catch (err: any) {
       this.logger.error(`Failed to send OTP email to ${to}: ${err.message}`);
     }
@@ -137,7 +162,7 @@ export class EmailService {
     }
     try {
       const result = await this.resend.emails.send({ from: this.from, to, subject, html, text });
-      this.logger.log(`Reset-password email sent to ${to} · resend id ${result.data?.id ?? 'n/a'}`);
+      this.logSendResult('Reset-password', to, result);
     } catch (err: any) {
       this.logger.error(`Failed to send reset-password email to ${to}: ${err.message}`);
     }
@@ -201,8 +226,11 @@ export class EmailService {
         html,
         text,
       });
-      this.logger.log(
-        `New-login alert sent to ${to} · resend id ${result.data?.id ?? 'n/a'} · firstLogin=${isFirstLogin} newIp=${isNewIp} newDevice=${isNewDevice}`,
+      this.logSendResult(
+        'New-login alert',
+        to,
+        result,
+        ` · firstLogin=${isFirstLogin} newIp=${isNewIp} newDevice=${isNewDevice}`,
       );
     } catch (err: any) {
       this.logger.error(`sendNewLoginIfNew failed: ${err.message}`);
