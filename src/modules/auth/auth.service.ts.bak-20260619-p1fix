@@ -127,17 +127,16 @@ export class AuthService {
         });
       }
 
-      // Trial 7 dias criado DENTRO da tx (PrismaSystemService bypassa RLS) ·
-      // garante que a conta nova nasça com subscription · sem fire-and-forget
-      // e sem depender de /billing/me · falha aqui faz o cadastro inteiro
-      // rolar back (não retorna sucesso com conta sem subscription).
-      await this.subscriptions.createTrialInTx(tx, organization.id);
-
       return { user, organization };
     });
 
     const tokens = await this.generateTokens(result.user.id, result.user.email);
     this.logger.log(`User registered (new workspace): ${result.user.email}`);
+
+    // Trial 7 dias automático · plan SOLO default · sem cartão na frente
+    await this.subscriptions
+      .createTrialForOrg(result.organization.id)
+      .catch((err) => this.logger.warn(`Trial subscription failed: ${err.message}`));
 
     // CRM out-of-the-box · pipeline default com estágios · sem isso o auto-card
     // de conversas novas fica inerte e nenhum lead entra no CRM. Best-effort.

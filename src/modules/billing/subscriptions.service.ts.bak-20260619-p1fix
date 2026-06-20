@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma, SubscriptionStatus } from '@prisma/client';
+import { SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
 const TRIAL_DAYS = 7;
@@ -35,26 +35,6 @@ export class SubscriptionsService {
     });
     this.logger.log(`Trial subscription created for org ${organizationId} · ends ${trialEndsAt.toISOString()}`);
     return sub;
-  }
-
-  /**
-   * Cria o trial DENTRO de uma transação existente, usando o client `tx`.
-   * Pensado pro fluxo de cadastro: o register roda em PrismaSystemService
-   * (role que bypassa RLS), então a subscription nasce junto com user/org de
-   * forma atômica e confiável — sem fire-and-forget e sem depender de
-   * findOrCreate posterior. Política MVP grátis = TRIAL_DAYS (7) dias.
-   */
-  async createTrialInTx(tx: Prisma.TransactionClient, organizationId: string) {
-    const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DAYS);
-    return tx.subscription.create({
-      data: {
-        organizationId,
-        planCode: DEFAULT_TRIAL_PLAN,
-        status: SubscriptionStatus.TRIAL,
-        trialEndsAt,
-      },
-    });
   }
 
   /** Subscription da org com plano populado. Lança 404 se não existe. */
