@@ -89,6 +89,7 @@ export class SubscriptionsService {
    */
   async getAccountStatus(organizationId: string): Promise<{
     suspended: boolean;
+    isPilot: boolean;
     reason:
       | 'trial_active'
       | 'trial_expired'
@@ -101,12 +102,25 @@ export class SubscriptionsService {
     trialEndsAt: Date | null;
     planCode: string | null;
   }> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { settings: true },
+    });
+    // Conta-piloto = flag explicita organization.settings.pilot === true.
+    // NUNCA derivar de status TRIAL (trials comerciais futuros nao sao piloto).
+    const isPilot =
+      !!org &&
+      typeof org.settings === 'object' &&
+      org.settings !== null &&
+      (org.settings as Record<string, unknown>).pilot === true;
+
     const sub = await this.prisma.subscription.findUnique({
       where: { organizationId },
     });
     if (!sub) {
       return {
         suspended: true,
+        isPilot,
         reason: 'no_subscription',
         status: null,
         trialEndsAt: null,
@@ -158,6 +172,7 @@ export class SubscriptionsService {
 
     return {
       suspended,
+      isPilot,
       reason,
       status: sub.status,
       trialEndsAt: sub.trialEndsAt,
