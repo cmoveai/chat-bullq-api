@@ -7,8 +7,9 @@ import { OtpService } from './otp.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
-import { JwtAuthGuard, SupabaseAuthGuard } from '../../common/guards';
-import { CurrentUser } from '../../common/decorators';
+import { JwtAuthGuard, SupabaseAuthGuard, SuperAdminGuard } from '../../common/guards';
+import { CurrentUser, SuperAdmin } from '../../common/decorators';
+import { PilotInviteService } from './pilot-invite.service';
 
 import { AuditService } from '../audit/audit.service';
 import { EmailService } from '../email/email.service';
@@ -23,7 +24,25 @@ export class AuthController {
     private readonly audit: AuditService,
     private readonly email: EmailService,
     private readonly anomaly: AnomalyDetectorService,
+    private readonly pilotInvites: PilotInviteService,
   ) {}
+
+  // Emite convite de piloto (super-admin) · retorna o token BRUTO uma unica vez.
+  @Post('pilot-invites')
+  @UseGuards(JwtAuthGuard, SuperAdminGuard)
+  @SuperAdmin()
+  @ApiOperation({ summary: 'Emite convite de piloto (super-admin)' })
+  async createPilotInvite(
+    @Body() body: { email: string; expiresInHours?: number },
+    @Req() req: Request,
+  ) {
+    const userId = (req as Request & { user?: { id: string } }).user?.id;
+    const created = await this.pilotInvites.create(body.email, {
+      ttlHours: body.expiresInHours,
+      createdBy: userId,
+    });
+    return { data: created };
+  }
 
   // Cyber Onda 1 · brute-force protection · 5 tentativas/min/IP
   @Post('register')

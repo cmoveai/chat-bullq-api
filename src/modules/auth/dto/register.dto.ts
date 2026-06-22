@@ -43,4 +43,9 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   inviteToken?: string;
+
+  @ApiPropertyOptional({ description: 'Token de convite de piloto · cadastro self-service do piloto fechado' })
+  @IsOptional()
+  @IsString()
+  pilotToken?: string;
 }
