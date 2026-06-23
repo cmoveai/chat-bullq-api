@@ -18,6 +18,7 @@ import { LoginDto } from './dto/login.dto';
 import { LoginAttemptsService } from './login-attempts.service';
 import { PasswordPolicyService } from './password-policy.service';
 import { AuthTokensService } from './auth-tokens.service';
+import { PilotInviteService } from './pilot-invite.service';
 import { EmailService } from '../email/email.service';
 import { SubscriptionsService } from '../billing/subscriptions.service';
 import { LimitEnforcerService } from '../billing/limit-enforcer.service';
@@ -43,6 +44,7 @@ export class AuthService {
     private readonly subscriptions: SubscriptionsService,
     private readonly authTokens: AuthTokensService,
     private readonly limitEnforcer: LimitEnforcerService,
+    private readonly pilotInvites: PilotInviteService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -67,10 +69,19 @@ export class AuthService {
       return this.registerWithInvite(dto, hashedPassword);
     }
 
-    return this.registerNewWorkspace(dto, hashedPassword);
+    // Convite de piloto · valida ANTES da tx (e-mail deve bater) · consumido na tx
+    const pilotInvite = dto.pilotToken
+      ? await this.pilotInvites.validate(dto.pilotToken, dto.email)
+      : null;
+
+    return this.registerNewWorkspace(dto, hashedPassword, pilotInvite);
   }
 
-  private async registerNewWorkspace(dto: RegisterDto, hashedPassword: string) {
+  private async registerNewWorkspace(
+    dto: RegisterDto,
+    hashedPassword: string,
+    pilotInvite?: { id: string } | null,
+  ) {
     const slug = this.generateSlug(dto.name);
 
     const result = await this.system.$transaction(async (tx) => {
@@ -132,6 +143,35 @@ export class AuthService {
       // e sem depender de /billing/me · falha aqui faz o cadastro inteiro
       // rolar back (não retorna sucesso com conta sem subscription).
       await this.subscriptions.createTrialInTx(tx, organization.id);
+
+      // Convite de piloto · marca conta como piloto + canal demo inerte + consome
+      // o convite, tudo na MESMA tx (rollback = convite NAO fica usado, conta NAO
+      // nasce sem piloto). Canal demo nao envia mensagem real (channel-sendability).
+      if (pilotInvite) {
+        await tx.organization.update({
+          where: { id: organization.id },
+          data: { settings: { pilot: true } },
+        });
+        await tx.channel.create({
+          data: {
+            organizationId: organization.id,
+            type: 'WHATSAPP_OFFICIAL',
+            name: 'Canal Demo',
+            config: { demo: true },
+            connectionStatus: 'demo',
+            isActive: true,
+          },
+        });
+        await tx.pilotInvite.update({
+          where: { id: pilotInvite.id },
+          data: {
+            status: 'USED',
+            usedAt: new Date(),
+            usedByUserId: user.id,
+            usedByOrganizationId: organization.id,
+          },
+        });
+      }
 
       return { user, organization };
     });

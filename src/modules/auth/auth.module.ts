@@ -12,6 +12,7 @@ import { SupabaseJwtStrategy } from './supabase-jwt.strategy';
 import { LoginAttemptsService } from './login-attempts.service';
 import { PasswordPolicyService } from './password-policy.service';
 import { AuthTokensService } from './auth-tokens.service';
+import { PilotInviteService } from './pilot-invite.service';
 import { LgpdController } from './lgpd.controller';
 import { LgpdService } from './lgpd.service';
 import { TwoFactorController } from './two-factor.controller';
@@ -49,6 +50,7 @@ import { SecurityModule } from '../security/security.module';
     LoginAttemptsService,
     PasswordPolicyService,
     AuthTokensService,
+    PilotInviteService,
     LgpdService,
     TwoFactorService,
     GoogleAuthService,
